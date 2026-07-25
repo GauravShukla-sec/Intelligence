@@ -1,0 +1,15 @@
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.sqlite3
+*.sqlite3-*
+.env
+.venv/
+venv/
+logs/
+*.log
+.pytest_cache/
+.claude/
+node_modules/
+cloudflared

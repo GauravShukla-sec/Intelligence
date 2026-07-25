@@ -1,0 +1,30 @@
+# Environment / secrets
+.env
+
+# Databases
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# local tunnel binary
+cloudflared
+
+# Local editor/agent config
+.claude/
+
+# Log directory
+logs/

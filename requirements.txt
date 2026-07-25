@@ -1,0 +1,22 @@
+# Global Security Intelligence Desk — Python dependencies
+# Core web framework (already present in the reference environment)
+Flask>=3.0,<4.0
+
+# RSS / Atom ingestion
+feedparser>=6.0
+
+# Production WSGI server (used by the Docker image / cloud deploy).
+# Not required for local `python run.py` development.
+gunicorn>=21.0
+
+# Testing
+pytest>=8.0
+
+# Optional AI providers — install only if you enable live analysis.
+# The application runs fully WITHOUT these using the built-in heuristic analyzer.
+# anthropic>=0.40
+# openai>=1.40
+#
+# Optional: a compliant web-search provider client can be added behind the
+# search connector interface (see gsid/ingestion/connectors.py). None is
+# required for the RSS-based ingestion path.

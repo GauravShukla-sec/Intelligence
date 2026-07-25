@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Global Security Intelligence Desk</title>
+  <meta name="description" content="Corporate global-security intelligence desk: verified, scored, and connected to security work." />
+  <link rel="preconnect" href="/" />
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to main content</a>
+
+  <!-- Sidebar navigation -->
+  <aside class="sidebar" id="sidebar" aria-label="Primary">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">GS</div>
+      <div class="brand-text">
+        <strong>Intelligence Desk</strong>
+        <span>Global Security</span>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Sections">
+      <a href="#/dashboard" data-nav="dashboard"><span class="nav-ico" aria-hidden="true">◧</span> Executive Dashboard</a>
+      <a href="#/brief" data-nav="brief"><span class="nav-ico" aria-hidden="true">▤</span> Daily Brief</a>
+      <a href="#/alerts" data-nav="alerts"><span class="nav-ico" aria-hidden="true">▲</span> Critical Alerts <span class="nav-badge" id="alertBadge" hidden>0</span></a>
+      <a href="#/stories" data-nav="stories"><span class="nav-ico" aria-hidden="true">▦</span> Stories</a>
+      <a href="#/map" data-nav="map"><span class="nav-ico" aria-hidden="true">◍</span> World / Region</a>
+      <a href="#/travel" data-nav="travel"><span class="nav-ico" aria-hidden="true">✈</span> Travel Risk</a>
+      <a href="#/regional" data-nav="regional"><span class="nav-ico" aria-hidden="true">◈</span> Regional Watch</a>
+      <a href="#/regulatory" data-nav="regulatory"><span class="nav-ico" aria-hidden="true">§</span> Regulatory Tracker</a>
+      <a href="#/supply" data-nav="supply"><span class="nav-ico" aria-hidden="true">⚓</span> Supply-Chain Watch</a>
+      <a href="#/cyber" data-nav="cyber"><span class="nav-ico" aria-hidden="true">⌘</span> Cyber-Physical</a>
+      <a href="#/saved" data-nav="saved"><span class="nav-ico" aria-hidden="true">★</span> Saved</a>
+      <a href="#/learn" data-nav="learn"><span class="nav-ico" aria-hidden="true">◆</span> Learn &amp; Exercise</a>
+      <a href="#/transparency" data-nav="transparency"><span class="nav-ico" aria-hidden="true">◉</span> Transparency &amp; Audit</a>
+      <a href="#/settings" data-nav="settings"><span class="nav-ico" aria-hidden="true">⚙</span> Watchlist &amp; Settings</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="modeBadge" class="mode-badge">…</div>
+      <button id="themeToggle" class="btn-ghost" aria-label="Toggle light/dark theme">◐ Theme</button>
+    </div>
+  </aside>
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <button id="menuToggle" class="icon-btn" aria-label="Toggle navigation" aria-expanded="false">☰</button>
+    <form id="searchForm" class="search" role="search">
+      <label for="searchInput" class="sr-only">Search intelligence</label>
+      <input id="searchInput" type="search" placeholder="Search stories, locations, regulations…" autocomplete="off" />
+      <button type="submit" class="icon-btn" aria-label="Search">⌕</button>
+    </form>
+    <div class="topbar-right">
+      <label for="tzSelect" class="sr-only">Timezone</label>
+      <select id="tzSelect" class="tz-select" title="Display timezone"></select>
+      <span id="clock" class="clock" aria-live="off">—</span>
+    </div>
+  </header>
+
+  <!-- Demo data banner -->
+  <div id="demoBanner" class="demo-banner" role="status" hidden>
+    <strong>DEMO DATA</strong> — illustrative scenarios, <em>not current news</em>. Configure live sources to ingest real feeds. See Settings.
+  </div>
+
+  <main id="main" class="main" tabindex="-1">
+    <div id="view" class="view" aria-live="polite"></div>
+  </main>
+
+  <!-- Modal host -->
+  <div id="modalHost" class="modal-host" hidden>
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h2 id="modalTitle">Detail</h2>
+        <button class="icon-btn" data-close aria-label="Close">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <template id="tpl-loading">
+    <div class="loading"><div class="spinner" aria-hidden="true"></div><p>Loading intelligence…</p></div>
+  </template>
+
+  <script src="/static/js/api.js"></script>
+  <script src="/static/js/components.js"></script>
+  <script src="/static/js/map.js"></script>
+  <script src="/static/js/views.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

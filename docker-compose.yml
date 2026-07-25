@@ -1,0 +1,36 @@
+# Local / VM deployment of the Global Security Intelligence Desk.
+#   docker compose up -d --build
+# Then open http://localhost:8000
+#
+# This runs the desk as a PUBLIC READ-ONLY viewer: anyone can browse and
+# refresh; changing settings/watchlists requires GSID_ADMIN_TOKEN.
+services:
+  gsid:
+    build: .
+    image: gsid:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      GSID_ENV: production
+      GSID_SECRET_KEY: "change-me-to-a-long-random-string"
+      GSID_DB_PATH: /data/gsid.sqlite3
+
+      # Live data + daily auto-refresh
+      GSID_DATA_MODE: hybrid
+      GSID_INGEST_EVERY_HOURS: "24"
+      GSID_INGEST_INTERVAL_MINUTES: "15"
+
+      # Public read-only: view + refresh for everyone; admin token unlocks edits
+      GSID_PUBLIC_READONLY: "true"
+      GSID_PUBLIC_ALLOW_REFRESH: "true"
+      GSID_ADMIN_TOKEN: "change-me-admin-token"
+
+      # AI analysis: heuristic (no key). To use a model, set provider + key.
+      GSID_AI_PROVIDER: heuristic
+      # ANTHROPIC_API_KEY: ""
+    volumes:
+      - gsid-data:/data
+
+volumes:
+  gsid-data:
