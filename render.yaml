@@ -16,8 +16,9 @@ services:
     envVars:
       - key: GSID_ENV
         value: production
+      # live = only real ingested feeds (no demo fixtures mixed into news)
       - key: GSID_DATA_MODE
-        value: hybrid
+        value: live
       - key: GSID_INGEST_EVERY_HOURS
         value: "24"
       - key: GSID_INGEST_INTERVAL_MINUTES

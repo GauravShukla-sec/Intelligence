@@ -79,7 +79,8 @@
     const badge = document.getElementById("modeBadge");
     badge.textContent = "Mode: " + mode + " · AI: " + API.state.meta.ai_provider;
     badge.className = "mode-badge " + (mode === "demo" ? "demo" : mode === "live" ? "live" : "");
-    if (mode === "demo" || mode === "hybrid") {
+    // Only pure demo mode is "not current news". Hybrid/live serve real feeds.
+    if (mode === "demo") {
       document.getElementById("demoBanner").hidden = false;
       document.body.classList.add("has-banner");
     }

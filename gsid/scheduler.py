@@ -25,7 +25,7 @@ _lock = threading.Lock()
 
 
 class IngestionScheduler:
-    def __init__(self, config, analyzer=None, first_delay_seconds: float = 20.0):
+    def __init__(self, config, analyzer=None, first_delay_seconds: float = 6.0):
         self.config = config
         self.analyzer = analyzer or get_analyzer(config)
         self.interval = max(1, config.ingest_every_hours) * 3600
