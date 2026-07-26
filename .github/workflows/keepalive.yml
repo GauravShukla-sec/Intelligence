@@ -1,0 +1,29 @@
+name: Keep Render awake
+
+# Render's free tier sleeps after ~15 min idle, causing a slow (~30-50s) first
+# load. This workflow pings the health endpoint every ~10 minutes so the app
+# stays warm and loads instantly for visitors. It also keeps the in-app data
+# warm between the daily refreshes. Runs on GitHub's free scheduler.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (GitHub may delay a few min)
+  workflow_dispatch:          # lets you run it manually from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the app so Render keeps it awake
+        run: |
+          URL="https://gsid.onrender.com/api/health"
+          # Wait long enough to ride through a cold start if it was asleep.
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+          echo "health check returned: $code"
+          if [ "$code" != "200" ]; then
+            echo "retrying once..."; sleep 15
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$URL" || echo "000")
+            echo "retry returned: $code"
+          fi
+          [ "$code" = "200" ] || { echo "app did not respond OK"; exit 1; }
+          echo "app is awake ✔"
