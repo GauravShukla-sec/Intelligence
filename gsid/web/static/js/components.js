@@ -68,8 +68,17 @@
     return ring;
   }
 
+  function isNewToday(s) {
+    const ts = s.event_time || s.first_seen;
+    if (!ts) return false;
+    const t = new Date(String(ts).replace(" ", "T"));
+    if (isNaN(t)) return false;
+    return (Date.now() - t.getTime()) < 24 * 3600 * 1000;
+  }
+
   function storyCard(s, onOpen) {
     const meta = h("div", { class: "sc-meta" }, [
+      isNewToday(s) ? chip("New today", "sev-new", "✦") : null,
       chip(s.category_name, "", "▦"),
       chip(s.region_name, "", "◍"),
       impactChip(s.impact),

@@ -231,6 +231,14 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 .sev-moderate .dot { background: var(--sev-moderate); }
 .sev-low { color: var(--sev-low); border-color: color-mix(in srgb, var(--sev-low) 55%, var(--border)); }
 .sev-low .dot { background: var(--sev-low); }
+/* "New today" — accent-filled so fresh items stand out (not a severity) */
+.sev-new {
+  color: #fff;
+  background: color-mix(in srgb, var(--accent, #4c8dff) 88%, #000);
+  border-color: transparent;
+  font-weight: 600;
+}
+.sev-new .dot { background: #fff; }
 
 .conf-Confirmed{color:var(--conf-confirmed);border-color:color-mix(in srgb,var(--conf-confirmed) 55%,var(--border));}
 .conf-High{color:var(--conf-high);border-color:color-mix(in srgb,var(--conf-high) 55%,var(--border));}
