@@ -518,6 +518,8 @@ def _filters_from_request() -> dict:
         f["alerts_only"] = True
     if args.get("verified_only") in ("1", "true"):
         f["verified_only"] = True
+    if args.get("new_today") in ("1", "true"):
+        f["new_today"] = True
     if args.get("data_mode") in ("demo", "live"):
         f["data_mode"] = args.get("data_mode")
     return f

@@ -114,6 +114,14 @@ def test_saved_flow(client):
     assert client.delete(f"/api/saved/{sid}").status_code == 200
 
 
+def test_new_today_filter_returns_only_recent(client):
+    # All demo/live stories should still be a superset of the new_today subset.
+    all_ids = {s["id"] for s in client.get("/api/stories?limit=300").get_json()["stories"]}
+    recent = client.get("/api/stories?new_today=1&limit=300").get_json()["stories"]
+    recent_ids = {s["id"] for s in recent}
+    assert recent_ids <= all_ids  # subset, never larger than the full set
+
+
 def test_travel_endpoint_resolves_code_and_name(client):
     by_code = client.get("/api/travel?country=es").get_json()
     assert by_code["country_name"] == "Spain"

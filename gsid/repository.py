@@ -78,6 +78,12 @@ def list_stories(conn, filters: dict[str, Any] | None = None,
         add("is_alert = 1")
     if filters.get("verified_only"):
         add("confidence IN ('Confirmed','High')")
+    if filters.get("new_today"):
+        # Published (or, if unknown, first seen) within the last 24 hours.
+        from datetime import datetime, timezone, timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        add("COALESCE(event_time, first_seen) >= ?", cutoff)
     if filters.get("since"):
         add("last_updated >= ?", filters["since"])
     if filters.get("ids"):
