@@ -972,13 +972,16 @@
     const node = h("div");
     const meta = API.state.meta;
     const briefHost = h("div");
+    const trip = { country: null, origin: "" };  // destination + traveller nationality
 
-    async function loadCountry(code) {
-      window.location.hash = "#/travel?country=" + code;  // shareable
+    async function run() {
+      if (!trip.country) return;
+      const q = "#/travel?country=" + trip.country + (trip.origin ? "&origin=" + trip.origin : "");
+      window.location.hash = q;  // shareable
       briefHost.innerHTML = "";
       briefHost.appendChild(C.loading());
       try {
-        const tb = await API.travel(code);
+        const tb = await API.travel(trip.country, trip.origin);
         briefHost.innerHTML = "";
         briefHost.appendChild(renderTravelBrief(tb));
       } catch (e) {
@@ -986,22 +989,31 @@
         briefHost.appendChild(C.empty("Could not load: " + e.message));
       }
     }
+    function loadCountry(code) { trip.country = code; run(); }
 
     mount(node, async () => {
       const prefs = await API.preferences();
       const wrap = h("div");
       wrap.appendChild(head("Travel Risk",
-        "Pick a destination to see the official advisory and what your travellers should look out for."));
+        "Pick a destination for the official advisory and what your travellers should watch for. "
+        + "Add a traveller nationality to lead with the matching government's advice."));
 
-      // country picker
+      // destination picker
       const select = h("select", { "aria-label": "Destination country" },
         [h("option", { value: "" }, "— Select destination —")]
           .concat((meta.countries || []).map((c) => h("option", { value: c.code }, c.name))));
       select.onchange = (e) => { if (e.target.value) loadCountry(e.target.value); };
 
+      // traveller nationality picker (optional)
+      const originSel = h("select", { "aria-label": "Traveller nationality" },
+        [h("option", { value: "" }, "Any / show UK + US")]
+          .concat((meta.countries || []).map((c) => h("option", { value: c.code }, c.name))));
+      originSel.onchange = (e) => { trip.origin = e.target.value; run(); };
+
       wrap.appendChild(h("div", { class: "filters" }, [
         h("label", null, ["Destination", select]),
-        h("span", { class: "sd-reason" }, "Advisories are sourced from the UK FCDO and US State Department."),
+        h("label", null, ["Traveller nationality (optional)", originSel]),
+        h("span", { class: "sd-reason" }, "The risk picture is destination-based; nationality only decides whose advisory leads and entry/visa context."),
       ]));
 
       // saved travel destinations as quick chips
@@ -1017,7 +1029,8 @@
       }
 
       wrap.appendChild(briefHost);
-      // deep link ?country=
+      // deep link ?country=&origin=
+      if (params && params.origin) { trip.origin = params.origin; originSel.value = params.origin; }
       if (params && params.country) { select.value = params.country; loadCountry(params.country); }
       return wrap;
     });
@@ -1036,6 +1049,14 @@
           tb.related.length + " related development(s)"),
         h("div", { class: "btn-row", style: "margin-top:.6rem" },
           tb.official_links.map((l) => h("a", { class: "btn small", href: l.url, target: "_blank", rel: "noopener noreferrer" }, "Official: " + l.name))),
+      ]));
+
+      // traveller context (nationality-dependent)
+      const tv = tb.traveller || {};
+      wrap.appendChild(h("div", { class: "panel", style: "margin-bottom:1rem" }, [
+        h("h2", null, tv.origin ? ("Traveller context — " + tv.origin_name) : "Traveller context"),
+        h("p", null, tv.note),
+        tv.entry_note ? h("p", { class: "sd-reason" }, "Entry & visa: " + tv.entry_note) : null,
       ]));
 
       // official advisory records

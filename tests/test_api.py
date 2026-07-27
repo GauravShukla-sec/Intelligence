@@ -134,6 +134,22 @@ def test_travel_unknown_country(client):
     assert client.get("/api/travel?country=zzz").status_code == 400
 
 
+def test_travel_origin_adds_traveller_context(client):
+    # No origin: neutral context, both advisories offered.
+    base = client.get("/api/travel?country=es").get_json()
+    assert base["traveller"]["origin"] is None
+    # US origin: leads with State Dept and includes entry/visa note.
+    us = client.get("/api/travel?country=es&origin=us").get_json()
+    assert us["traveller"]["origin"] == "us"
+    assert us["traveller"]["lead"] == "state"
+    assert "United States" in us["traveller"]["entry_note"]
+    assert "State Dept" in us["official_links"][0]["name"]
+    # UK origin leads with FCDO.
+    uk = client.get("/api/travel?country=es&origin=United Kingdom").get_json()
+    assert uk["traveller"]["lead"] == "fcdo"
+    assert "FCDO" in uk["official_links"][0]["name"]
+
+
 def test_meta_includes_countries(client):
     m = client.get("/api/meta").get_json()
     assert isinstance(m.get("countries"), list) and len(m["countries"]) > 100

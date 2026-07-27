@@ -291,7 +291,9 @@ def create_app(config: Config | None = None) -> Flask:
         if not code:
             return jsonify({"error": "unknown_country",
                             "detail": "Provide a valid country code or name."}), 400
-        return jsonify(repository.travel_brief(get_conn(), code, data_mode_param()))
+        origin = resolve_country(request.args.get("origin", "")) or None
+        return jsonify(repository.travel_brief(
+            get_conn(), code, data_mode_param(), origin))
 
     @app.get("/api/search")
     def search():

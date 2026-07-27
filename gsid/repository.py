@@ -210,10 +210,18 @@ def regional_watch(conn, data_mode: str | None = None) -> list[dict]:
     return out
 
 
-def travel_brief(conn, code: str, data_mode: str | None = None) -> dict:
+def travel_brief(conn, code: str, data_mode: str | None = None,
+                 origin: str | None = None) -> dict:
     """Per-destination travel-risk brief: official advisory + relevant
-    developments + a synthesized 'what to look out for' list."""
+    developments + a synthesized 'what to look out for' list.
+
+    The risk picture is DESTINATION-based (that is how government advisories
+    work). The optional `origin` (traveller home country / nationality) does
+    not change the threat — it only decides *which* government's advisory to
+    lead with and surfaces entry/visa/consular context for that traveller.
+    """
     code = (code or "").strip().lower()
+    origin = (origin or "").strip().lower() or None
     name = country_name(code)
     region = region_for_country(code)
 
@@ -242,25 +250,83 @@ def travel_brief(conn, code: str, data_mode: str | None = None) -> dict:
     # "What to look out for" — aggregate indicators + top recommended actions.
     watch, actions = _aggregate_watch(conn, advisories + related)
 
+    advisory_details = [_attach_advisory_detail(conn, s, origin) for s in advisories]
+
     return {
         "country": code,
         "country_name": name,
         "region": region,
         "region_name": REGION_NAMES.get(region, region),
-        "advisories": [_attach_advisory_detail(conn, s) for s in advisories],
-        "official_links": _official_advisory_links(code, name),
+        "advisories": advisory_details,
+        "official_links": _official_advisory_links(code, name, origin),
         "related": related,
         "watch_items": watch,
         "recommended_actions": actions,
         "highest_impact": _highest_impact(country_stories + related),
+        "traveller": _traveller_context(origin, code, name),
     }
 
 
-def _attach_advisory_detail(conn, s: dict) -> dict:
+# Which ingested government advisory best matches a traveller's home country.
+def _lead_authority(origin: str | None) -> str | None:
+    if origin == "gb":
+        return "fcdo"
+    if origin == "us":
+        return "state"
+    return None  # other nationalities: no strong lead among the two we ingest
+
+
+def _traveller_context(origin: str | None, dest_code: str, dest_name: str) -> dict:
+    """Origin-dependent context: whose advisory leads + entry/visa guidance.
+
+    We do NOT have per-nationality visa data, so we give authoritative
+    guidance and links rather than fabricating specific visa rules.
+    """
+    if not origin:
+        return {
+            "origin": None,
+            "note": "Showing UK FCDO and US State Department advisories. Select a "
+                    "traveller nationality to lead with the matching government's "
+                    "advice and see entry/consular context.",
+            "lead": None,
+        }
+    origin_name = country_name(origin)
+    lead = _lead_authority(origin)
+    lead_name = {"fcdo": "UK FCDO", "state": "US State Department"}.get(lead)
+    if lead_name:
+        whose = f"Leading with {lead_name} advice, written for {origin_name} travellers."
+    else:
+        whose = (f"We track UK FCDO and US State Department advisories. {origin_name} "
+                 f"may publish its own government travel advice — check it as the "
+                 f"authoritative source for {origin_name} nationals.")
+    return {
+        "origin": origin,
+        "origin_name": origin_name,
+        "lead": lead,
+        "note": whose,
+        "entry_note": (
+            f"Entry, visa and transit requirements for {dest_name} depend on the "
+            f"traveller's nationality ({origin_name}) and passport, not on the threat "
+            f"level. Verify against {dest_name}'s official immigration authority and "
+            f"the traveller's own government travel advice before booking."
+        ),
+    }
+
+
+def _attach_advisory_detail(conn, s: dict, origin: str | None = None) -> dict:
     full = get_story(conn, s["id"]) or s
     s = dict(s)
     s["summary"] = full.get("summary", s.get("summary"))
-    s["citations"] = full.get("citations", [])
+    citations = full.get("citations", [])
+    lead = _lead_authority(origin)
+    if lead:
+        key = "fcdo" if lead == "fcdo" else "state"
+        match = "FCDO" if key == "fcdo" else "State"
+        citations = sorted(
+            citations,
+            key=lambda c: 0 if match.lower() in (c.get("source_name") or "").lower() else 1,
+        )
+    s["citations"] = citations
     return s
 
 
@@ -285,12 +351,19 @@ def _aggregate_watch(conn, stories: list[dict]) -> tuple[list[str], list[dict]]:
     return watch[:8], actions[:6]
 
 
-def _official_advisory_links(code: str, name: str) -> list[dict]:
+def _official_advisory_links(code: str, name: str, origin: str | None = None) -> list[dict]:
     slug = name.lower().replace(" ", "-")
-    return [
-        {"name": "UK FCDO travel advice", "url": f"https://www.gov.uk/foreign-travel-advice/{slug}"},
-        {"name": "US State Dept travel advisories", "url": "https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories.html"},
-    ]
+    fcdo = {"name": "UK FCDO travel advice",
+            "url": f"https://www.gov.uk/foreign-travel-advice/{slug}"}
+    state = {"name": "US State Dept travel advisories",
+             "url": "https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories.html"}
+    links = [fcdo, state]
+    lead = _lead_authority(origin)
+    if lead == "state":
+        links = [state, fcdo]
+    elif lead == "fcdo":
+        links = [fcdo, state]
+    return links
 
 
 def _highest_impact(stories: list[dict]) -> str:

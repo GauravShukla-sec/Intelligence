@@ -48,7 +48,8 @@
   API.regulations = () => req("/api/regulations");
   API.mapData = () => req("/api/map");
   API.search = (q) => req("/api/search?q=" + encodeURIComponent(q));
-  API.travel = (country) => req("/api/travel?country=" + encodeURIComponent(country));
+  API.travel = (country, origin) => req("/api/travel?country=" + encodeURIComponent(country)
+    + (origin ? "&origin=" + encodeURIComponent(origin) : ""));
   API.feedHealth = () => req("/api/feeds/health");
   API.preferences = () => req("/api/preferences");
   API.savePreferences = (obj) => req("/api/preferences", { method: "PUT", body: JSON.stringify(obj) });
