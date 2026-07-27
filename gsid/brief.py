@@ -14,6 +14,42 @@ from . import db, repository
 from .taxonomy import REGIONS, REGION_NAMES
 
 
+def _recency_hours(s: dict, now: datetime) -> float:
+    """Hours since the story's event/update time (large if unknown)."""
+    ts = s.get("event_time") or s.get("last_updated") or s.get("first_seen")
+    if not ts:
+        return 1e9
+    try:
+        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return 1e9
+    return max(0.0, (now - dt).total_seconds() / 3600.0)
+
+
+def todays_top(stories: list[dict], n: int = 5,
+               exclude_ids: set[str] | None = None) -> list[dict]:
+    """Rank 'today's top developments' by a blend of recency and relevance.
+
+    This is deliberately different from the Critical Alerts logic: the brief's
+    snapshot is about what's *new and significant today*, so freshness leads
+    and the always-on critical items (shown in their own Alerts section) are
+    excluded to avoid duplication.
+    """
+    exclude_ids = exclude_ids or set()
+    now = datetime.now(timezone.utc)
+
+    def rank(s: dict) -> float:
+        rh = _recency_hours(s, now)
+        recency = max(0.0, 1.0 - rh / 168.0)          # 1.0 now → 0 at ~7 days
+        relevance = (s.get("relevance_score") or 0) / 100.0
+        return 0.6 * recency + 0.4 * relevance
+
+    pool = [s for s in stories if s["id"] not in exclude_ids]
+    ranked = sorted(pool, key=rank, reverse=True)[:n]
+    # If everything got excluded (tiny datasets), fall back to plain top-N.
+    return ranked or stories[:n]
+
+
 def _risk_direction(trend: str) -> str:
     return {
         "Improving": "↓ improving",
@@ -27,7 +63,12 @@ def build_brief(conn, data_mode: str | None = None) -> dict:
     stories = repository.list_stories(
         conn, {"data_mode": data_mode} if data_mode else {}, limit=200
     )
-    top = stories[:5]
+
+    # Critical alerts have their own section; keep them out of the snapshot so
+    # the brief highlights today's *fresh* top developments, not the same
+    # always-critical items repeated. (Freshness-weighted; see todays_top.)
+    alert_ids = {a["id"] for a in repository.list_alerts(conn, data_mode)}
+    top = todays_top(stories, n=5, exclude_ids=alert_ids)
 
     # ---- 1. Executive snapshot ----
     snapshot = [{
