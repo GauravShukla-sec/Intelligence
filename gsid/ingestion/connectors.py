@@ -16,6 +16,7 @@ add non-RSS sources (official APIs, a compliant web-search provider, etc.).
 
 from __future__ import annotations
 
+import json
 import logging
 import urllib.request
 from dataclasses import dataclass, field
@@ -34,6 +35,15 @@ USER_AGENT = (
     "GSID-Intelligence-Desk/1.0 (+public-RSS-reader; respects-robots; no-scraping)"
 )
 
+# Some government portals (e.g. Australia's Smartraveller) sit behind bot
+# protection that stalls/blocks non-browser clients. A per-feed browser-like
+# User-Agent (FeedDef.user_agent) gives those feeds their best chance; the
+# pipeline stays fault-tolerant if they still block.
+BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
+
 
 @dataclass
 class FeedItem:
@@ -50,6 +60,7 @@ class FeedItem:
     region_hint: str
     category_hint: str
     is_travel_advisory: bool = False
+    subject_country: str = ""   # authoritative ISO of the advisory's DESTINATION
 
 
 @dataclass
@@ -67,6 +78,8 @@ class FeedDef:
     ownership: str = ""
     transparency: str = ""
     is_travel_advisory: bool = False  # items are per-destination government advice
+    kind: str = "rss"          # connector to use: "rss" | "json_ca"
+    user_agent: str = ""       # per-feed UA override (default USER_AGENT)
 
 
 class Connector(Protocol):
@@ -159,6 +172,34 @@ FEED_REGISTRY: list[FeedDef] = [
             1, "government", "us", region_hint="global", category_hint="geopolitical",
             ownership="US Department of State, Bureau of Consular Affairs",
             is_travel_advisory=True),
+    FeedDef("ca_gac_travel", "Global Affairs Canada — Travel Advisories",
+            "https://data.international.gc.ca/travel-voyage/index-updated.json",
+            1, "government", "ca", region_hint="global", category_hint="geopolitical",
+            ownership="Global Affairs Canada",
+            transparency="Official open-data JSON advisory dataset; ingested at "
+                         "Canada level 2 and above ('exercise a high degree of "
+                         "caution' through 'avoid all travel').",
+            kind="json_ca",
+            is_travel_advisory=True),
+    FeedDef("au_smartraveller", "Australia Smartraveller — Travel Advisories",
+            "https://www.smartraveller.gov.au/countries/documents/index.rss",
+            1, "government", "au", region_hint="global", category_hint="geopolitical",
+            ownership="Australian Department of Foreign Affairs & Trade (DFAT)",
+            transparency="Public per-destination advisory feed. Smartraveller "
+                         "applies bot protection that can intermittently block "
+                         "server-side fetchers even with a browser User-Agent.",
+            user_agent=BROWSER_UA,
+            is_travel_advisory=True),
+    FeedDef("de_aa_travel", "Germany Auswärtiges Amt — Travel Warnings",
+            "https://www.auswaertiges-amt.de/opendata/travelwarning",
+            1, "government", "de", language="de", region_hint="global",
+            category_hint="geopolitical",
+            ownership="German Federal Foreign Office (Auswärtiges Amt)",
+            transparency="Official OpenData travel-warning API; ingested for "
+                         "destinations with an active full, partial or "
+                         "situation-based travel warning.",
+            kind="json_de",
+            is_travel_advisory=True),
 ]
 
 FEED_BY_ID = {f.id: f for f in FEED_REGISTRY}
@@ -206,7 +247,10 @@ class RssConnector:
             return FetchResult([], "error", "feedparser not installed")
         http_status = 0
         try:
-            req = urllib.request.Request(self.feed.url, headers={"User-Agent": USER_AGENT})
+            req = urllib.request.Request(
+                self.feed.url,
+                headers={"User-Agent": self.feed.user_agent or USER_AGENT},
+            )
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 http_status = getattr(resp, "status", 0) or resp.getcode() or 0
                 raw = resp.read()
@@ -246,6 +290,179 @@ class RssConnector:
                     + (f" (HTTP {http_status})" if http_status and http_status != 200 else ""))
             return FetchResult(items, "empty", note, http_status)
         return FetchResult(items, "ok", "", http_status)
+
+
+def _epoch_to_utc_iso(ts) -> str:
+    if not ts:
+        return ""
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
+
+
+def _flag(v) -> bool:
+    """Truthy for JSON booleans and stringified 'true' (APIs vary)."""
+    return v is True or str(v).strip().lower() == "true"
+
+
+class _JsonAdvisoryConnector:
+    """Shared fetch/parse scaffold for JSON travel-advisory APIs.
+
+    Subclasses implement ``_items(payload)`` to turn a decoded JSON body into
+    FeedItems. Every emitted item should lead with the destination name and set
+    ``subject_country`` to the authoritative ISO code so the pipeline geo-tags
+    it to the DESTINATION and merges it with matching advisories from other
+    governments for the same place.
+    """
+
+    CAP = 300
+
+    def __init__(self, feed: FeedDef, timeout: int = 15):
+        self.feed = feed
+        self.timeout = timeout
+
+    def fetch(self) -> list[FeedItem]:
+        return self.fetch_with_status().items
+
+    def fetch_with_status(self) -> FetchResult:
+        http_status = 0
+        try:
+            req = urllib.request.Request(
+                self.feed.url,
+                headers={"User-Agent": self.feed.user_agent or USER_AGENT},
+            )
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                http_status = getattr(resp, "status", 0) or resp.getcode() or 0
+                raw = resp.read()
+        except Exception as exc:  # network errors must not crash ingestion
+            log.warning("fetch failed for %s: %s", self.feed.id, exc)
+            return FetchResult([], "error", str(exc)[:200])
+
+        try:
+            payload = json.loads(raw)
+        except Exception as exc:
+            return FetchResult([], "error", f"json parse: {str(exc)[:120]}", http_status)
+
+        items = self._items(payload)[: self.CAP]
+        log.info("fetched %d items from %s", len(items), self.feed.id)
+        if not items:
+            return FetchResult(items, "empty", "no elevated advisories parsed", http_status)
+        return FetchResult(items, "ok", "", http_status)
+
+    def _make_item(self, *, title, link, summary, published_at, subject_country) -> FeedItem:
+        return FeedItem(
+            title=title, link=link, summary=summary, published_at=published_at,
+            source_id=self.feed.id, source_name=self.feed.name, tier=self.feed.tier,
+            source_type=self.feed.source_type, country=self.feed.country,
+            language=self.feed.language, region_hint=self.feed.region_hint,
+            category_hint=self.feed.category_hint, is_travel_advisory=True,
+            subject_country=(subject_country or "").strip().lower(),
+        )
+
+    def _items(self, payload: dict) -> list[FeedItem]:  # pragma: no cover
+        raise NotImplementedError
+
+
+class CanadaAdvisoryConnector(_JsonAdvisoryConnector):
+    """Global Affairs Canada travel advisories via the official JSON dataset.
+
+    Lists every destination with an ``advisory-state`` (0-indexed: 0..3 map to
+    Canada levels 1..4). Emits destinations at level 2 and above
+    (``advisory-state >= 1``: 'high degree of caution' through 'avoid all
+    travel').
+    """
+
+    MIN_STATE = 1  # Canada level 2+ ("high degree of caution" and above)
+
+    def _items(self, payload: dict) -> list[FeedItem]:
+        data = (payload or {}).get("data") or {}
+        items: list[FeedItem] = []
+        for entry in data.values():
+            try:
+                state = int(entry.get("advisory-state", -1))
+            except (TypeError, ValueError):
+                state = -1
+            if state < self.MIN_STATE:
+                continue
+            eng = entry.get("eng") or {}
+            name = (eng.get("name") or entry.get("country-eng") or "").strip()
+            if not name:
+                continue
+            advisory_text = (eng.get("advisory-text") or "").strip()
+            slug = (eng.get("url-slug") or "").strip()
+            link = (f"https://travel.gc.ca/destinations/{slug}" if slug
+                    else "https://travel.gc.ca/travelling/advisories")
+            recent = (eng.get("recent-updates") or "").strip()
+            if advisory_text and recent:
+                summary = f"{advisory_text}. Recent update: {recent}"
+            else:
+                summary = advisory_text or recent
+            items.append(self._make_item(
+                title=f"{name} — {advisory_text}" if advisory_text else name,
+                link=link,
+                summary=summary,
+                published_at=_epoch_to_utc_iso((entry.get("date-published") or {}).get("timestamp")),
+                subject_country=entry.get("country-iso"),
+            ))
+        return items
+
+
+class GermanyAdvisoryConnector(_JsonAdvisoryConnector):
+    """German Federal Foreign Office (Auswärtiges Amt) travel warnings.
+
+    The OpenData ``/travelwarning`` endpoint returns ~200 country notices keyed
+    by contentId. Each carries boolean flags; we emit destinations with any
+    active warning (full 'Reisewarnung', partial, or situation-based) — the
+    German analogue of an elevated advisory. Content is German (language 'de');
+    the pipeline geo-tags via the authoritative 2-letter ``countryCode`` and
+    renders an English destination headline.
+    """
+
+    # (flag field, English label) in priority order, strongest first.
+    _LABELS = [
+        ("warning", "Travel warning (avoid travel)"),
+        ("partialWarning", "Partial travel warning"),
+        ("situationWarning", "Situation-based travel warning"),
+        ("situationPartWarning", "Partial situation-based travel warning"),
+    ]
+
+    def _items(self, payload: dict) -> list[FeedItem]:
+        resp = (payload or {}).get("response") or {}
+        items: list[FeedItem] = []
+        for content_id, entry in resp.items():
+            if not isinstance(entry, dict) or "iso3CountryCode" not in entry:
+                continue  # skips the scalar 'lastModified' and any stray keys
+            label = next((lbl for f, lbl in self._LABELS if _flag(entry.get(f))), "")
+            if not label:
+                continue  # baseline safety notice, not an elevated warning
+            name = (entry.get("countryName") or "").strip()
+            if not name:
+                continue
+            items.append(self._make_item(
+                title=f"{name} — {label}",
+                link=f"https://www.auswaertiges-amt.de/de/ReiseUndSicherheit/{content_id}",
+                summary=f"{entry.get('title', name)} · {label}",
+                published_at=_epoch_to_utc_iso(entry.get("lastModified") or entry.get("effective")),
+                subject_country=entry.get("countryCode"),
+            ))
+        return items
+
+
+_JSON_CONNECTORS = {
+    "json_ca": CanadaAdvisoryConnector,
+    "json_de": GermanyAdvisoryConnector,
+}
+
+
+def make_connector(feed: FeedDef, timeout: int = 15):
+    """Return the connector appropriate for a feed's ``kind``."""
+    cls = _JSON_CONNECTORS.get(feed.kind)
+    if cls is not None:
+        return cls(feed, timeout)
+    return RssConnector(feed, timeout)
 
 
 def selected_feeds(enabled_ids: list[str] | None) -> list[FeedDef]:

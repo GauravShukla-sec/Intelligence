@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from .connectors import RssConnector, selected_feeds, FeedItem
+from .connectors import make_connector, selected_feeds, FeedItem
 from .dedup import cluster_items, detect_circular
 from .sanitize import clean_content, is_valid_url
 from ..store import DraftClaim, DraftSource, StoryDraft, save_story
@@ -56,7 +56,7 @@ class IngestionPipeline:
         all_items: list[FeedItem] = []
         feed_status: dict[str, int] = {}
         for feed in feeds:
-            result = RssConnector(feed, self.config.fetch_timeout_seconds).fetch_with_status()
+            result = make_connector(feed, self.config.fetch_timeout_seconds).fetch_with_status()
             feed_status[feed.id] = len(result.items)
             all_items.extend(result.items)
             self._record_health(feed, result)
@@ -131,7 +131,10 @@ class IngestionPipeline:
         dest_code = None
         location_text = ""
         if travel:
-            dest_code = (resolve_country(_advisory_country_text(lead.title))
+            # Prefer an authoritative destination ISO if a connector supplied
+            # one (e.g. Canada's country-iso); else parse the headline / URL.
+            dest_code = (resolve_country(getattr(lead, "subject_country", ""))
+                         or resolve_country(_advisory_country_text(lead.title))
                          or resolve_country(lead.link))
             if dest_code:
                 location_text = country_name(dest_code)
