@@ -1046,7 +1046,10 @@
       wrap.appendChild(h("div", { class: "panel", style: "margin-bottom:1rem" }, [
         h("div", { class: "sc-top" }, [
           h("h2", null, "✈ " + tb.country_name),
-          C.impactChip(tb.highest_impact),
+          // Lead with the authoritative government advisory level; fall back to
+          // the developments-impact heuristic only when no advisory exists.
+          C.advisoryLevelChip(tb.advisory_consensus, tb.advisory_consensus_label)
+            || C.impactChip(tb.highest_impact),
         ]),
         h("div", { class: "sd-reason" }, "Region: " + tb.region_name +
           " · " + tb.advisories.length + " official advisory record(s) · " +

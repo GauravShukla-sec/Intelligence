@@ -13,6 +13,7 @@ from . import db
 from .taxonomy import (
     CATEGORY_NAMES, REGION_NAMES, country_name, region_for_country,
 )
+from .ingestion.advisory_levels import LEVEL_LABELS
 
 
 def _story_row_to_summary(row) -> dict[str, Any]:
@@ -257,6 +258,12 @@ def travel_brief(conn, code: str, data_mode: str | None = None,
 
     advisory_details = [_attach_advisory_detail(conn, s, origin) for s in advisories]
 
+    # Authoritative destination risk = worst government advisory level (Layer 2),
+    # not our news-impact heuristic (which over-reads for quiet destinations).
+    adv_levels = [(a.get("advisory") or {}).get("consensus", 0) or 0
+                  for a in advisory_details]
+    advisory_consensus = max(adv_levels) if adv_levels else 0
+
     return {
         "country": code,
         "country_name": name,
@@ -267,7 +274,13 @@ def travel_brief(conn, code: str, data_mode: str | None = None,
         "related": related,
         "watch_items": watch,
         "recommended_actions": actions,
-        "highest_impact": _highest_impact(country_stories + related),
+        # The destination headline reflects the DESTINATION's own risk only.
+        # Regional developments are shown for context but must not inflate it
+        # (an unrelated crisis elsewhere in the region shouldn't make a quiet
+        # country read "Critical").
+        "highest_impact": _highest_impact(country_stories),
+        "advisory_consensus": advisory_consensus,
+        "advisory_consensus_label": LEVEL_LABELS.get(advisory_consensus, ""),
         "traveller": _traveller_context(origin, code, name),
     }
 

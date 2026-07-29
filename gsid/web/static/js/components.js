@@ -133,6 +133,12 @@
   const ADV_SEV = { 4: "sev-critical", 3: "sev-high", 2: "sev-moderate", 1: "sev-low" };
   const ADV_ICON = { 4: "⛔", 3: "⚠", 2: "◑", 1: "■" };
 
+  function advisoryLevelChip(level, label) {
+    if (!level) return null;
+    return chip("Advisory: Level " + level + (label ? " · " + label : ""),
+      ADV_SEV[level] || "", ADV_ICON[level] || "•");
+  }
+
   function advisoryConsensus(adv) {
     if (!adv || !adv.consensus) return null;
     const govChips = (adv.sources || []).map((s) =>
@@ -174,8 +180,8 @@
 
   window.GSID_C = {
     h, chip, impactChip, confChip, urgencyChip, trendChip, ratingChips, scoreRing,
-    storyCard, scoreBars, ratingRationale, advisoryConsensus, cleanHeadline, truncate,
-    loading, empty, toast,
+    storyCard, scoreBars, ratingRationale, advisoryConsensus, advisoryLevelChip,
+    cleanHeadline, truncate, loading, empty, toast,
     IMPACT_ICON,
   };
 })();
