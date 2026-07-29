@@ -354,8 +354,13 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 /* Map */
 .map-wrap { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; overflow: hidden; }
 .map-wrap svg { width: 100%; height: auto; display: block; }
-.map-region { fill: var(--panel-2); stroke: var(--border-2); stroke-width: .5; cursor: pointer; transition: fill .15s; }
-.map-region:hover { fill: var(--border-2); }
+.map-canvas { min-height: 220px; }
+/* Real world map (country choropleth) */
+.map-ocean { fill: var(--panel-2); }
+.map-grat { stroke: var(--border); stroke-width: .4; stroke-opacity: .5; }
+.map-country { fill: var(--border-2); fill-opacity: .55; stroke: var(--panel); stroke-width: .4; transition: fill-opacity .12s, stroke .12s; }
+.map-country.clickable { cursor: pointer; }
+.map-country.clickable:hover { stroke: var(--accent); stroke-width: 1; fill-opacity: 1; }
 .map-dot { cursor: pointer; }
 
 /* Learn / quiz / scenario */

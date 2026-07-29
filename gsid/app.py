@@ -271,7 +271,8 @@ def create_app(config: Config | None = None) -> Flask:
         rows = repository.list_stories(get_conn(), f, limit=300)
         pts = [r for r in rows if r.get("lat") is not None and r.get("lon") is not None]
         return jsonify({"points": pts,
-                        "region_counts": repository.counts_by_region(get_conn(), data_mode_param())})
+                        "region_counts": repository.counts_by_region(get_conn(), data_mode_param()),
+                        "country_risk": repository.country_risk(get_conn(), data_mode_param())})
 
     @app.get("/api/admin/check")
     def admin_check():

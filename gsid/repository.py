@@ -463,3 +463,33 @@ def counts_by_region(conn, data_mode: str | None = None) -> dict[str, int]:
         f"SELECT primary_region, COUNT(*) AS n FROM story WHERE {where} "
         "GROUP BY primary_region", params).fetchall()
     return {r["primary_region"]: r["n"] for r in rows}
+
+
+_IMPACT_RANK = {"Low": 1, "Moderate": 2, "High": 3, "Critical": 4}
+
+
+def country_risk(conn, data_mode: str | None = None) -> dict[str, dict]:
+    """Per-country risk for the world map choropleth, keyed by ISO-2 (lower).
+
+    Each country gets its worst tracked impact and a development count.
+    Travel advisories are excluded (they live in Travel Risk, not the map).
+    """
+    where = "(s.status IS NULL OR s.status != 'advisory')"
+    if data_mode == "demo":
+        where += " AND s.is_demo=1"
+    elif data_mode == "live":
+        where += " AND s.is_demo=0"
+    rows = conn.execute(
+        f"SELECT sc.country AS c, s.impact AS impact FROM story_country sc "
+        f"JOIN story s ON sc.story_id = s.id WHERE {where}").fetchall()
+    agg: dict[str, dict] = {}
+    for r in rows:
+        c = (r["c"] or "").strip().lower()
+        if not c:
+            continue
+        rank = _IMPACT_RANK.get(r["impact"], 0)
+        e = agg.setdefault(c, {"count": 0, "rank": 0, "impact": "Low"})
+        e["count"] += 1
+        if rank > e["rank"]:
+            e["rank"], e["impact"] = rank, r["impact"] or "Low"
+    return {c: {"impact": v["impact"], "count": v["count"]} for c, v in agg.items()}

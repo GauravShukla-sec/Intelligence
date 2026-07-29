@@ -621,8 +621,10 @@
     mount(node, async () => {
       const data = await API.mapData();
       const wrap = h("div");
-      wrap.appendChild(head("World / Region View", "Click a marker to open the development, or a region to filter stories."));
-      wrap.appendChild(window.GSID_MAP.render(data, (id) => go("#/story/" + id), (region) => go("#/stories?region=" + region)));
+      wrap.appendChild(head("World / Region View", "Countries are shaded by risk. Click a country to filter its stories, or a marker to open the development."));
+      wrap.appendChild(window.GSID_MAP.render(data,
+        (id) => go("#/story/" + id),
+        (iso) => go("#/stories?country=" + iso)));
       // region summary
       const counts = data.region_counts || {};
       wrap.appendChild(h("div", { class: "grid grid-4", style: "margin-top:1rem" },
