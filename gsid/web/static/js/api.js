@@ -63,6 +63,7 @@
     },
   };
   API.regional = () => req("/api/regional");
+  API.advisoryChanges = (days) => req("/api/advisory-changes" + (days ? "?days=" + days : ""));
   API.regulations = () => req("/api/regulations");
   API.mapData = () => req("/api/map");
   API.search = (q) => req("/api/search?q=" + encodeURIComponent(q));

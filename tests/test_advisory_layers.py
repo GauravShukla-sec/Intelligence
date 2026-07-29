@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 
+from gsid import db
 from gsid.analysis.heuristic import HeuristicAnalyzer
 from gsid.ingestion.advisory_levels import level_from_text
 from gsid.repository import get_story
@@ -171,3 +172,42 @@ def test_official_links_cover_all_rating_governments():
     # US link uses the known-good ingested per-country URL, not a guess.
     us = next(l for l in links if "US State" in l["name"])
     assert us["url"] == us_url
+
+
+# ---- advisory change feed ---------------------------------------------------
+
+def _seed_state(conn, feed_id, dest, level, prev, changed_at):
+    conn.execute(
+        "INSERT OR REPLACE INTO advisory_state(feed_id,dest_country,level,prev_level,"
+        "content_hash,last_modified,changed_at,last_seen) VALUES (?,?,?,?,'h','t',?,?)",
+        (feed_id, dest, level, prev, changed_at, changed_at))
+
+
+def test_advisory_changes_classifies_and_orders(conn):
+    from gsid.repository import advisory_changes
+    now = db.utcnow()
+    _seed_state(conn, "ca_gac_travel", "th", 3, 2, now)   # escalated
+    _seed_state(conn, "de_aa_travel", "jp", 2, 3, now)    # de-escalated
+    _seed_state(conn, "us_state_travel", "ch", 1, 1, now)  # revised (same level)
+    _seed_state(conn, "ca_gac_travel", "af", 4, 0, now)   # first sighting
+    conn.commit()
+
+    d = advisory_changes(conn, days=14)
+    assert d["counts"] == {"escalated": 1, "deescalated": 1, "revised": 1, "new": 1}
+    kinds = [c["kind"] for c in d["changes"]]
+    assert kinds == ["escalated", "deescalated", "revised"]  # 'new' held back, escalation first
+    esc = d["changes"][0]
+    assert esc["country_name"] == "Thailand" and esc["prev_level"] == 2 and esc["level"] == 3
+    assert esc["level_label"]                       # normalized label resolved
+    assert "Canada" in esc["source_name"]           # attributed to the government
+
+    # include_new surfaces first sightings too.
+    assert len(advisory_changes(conn, days=14, include_new=True)["changes"]) == 4
+
+
+def test_advisory_changes_respects_time_window(conn):
+    from gsid.repository import advisory_changes
+    _seed_state(conn, "ca_gac_travel", "th", 3, 2, "2020-01-01T00:00:00Z")  # old
+    conn.commit()
+    d = advisory_changes(conn, days=7)
+    assert d["counts"]["escalated"] == 0 and d["changes"] == []

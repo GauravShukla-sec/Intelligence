@@ -163,6 +163,62 @@
     ]);
   }
 
+  // "What changed" feed for government travel advice (change-detection).
+  const CHG_META = {
+    escalated:   { label: "Escalated",    cls: "sev-critical",  ico: "↑" },
+    deescalated: { label: "Eased",        cls: "sev-low",       ico: "↓" },
+    revised:     { label: "Revised",      cls: "sev-moderate",  ico: "≈" },
+    new:         { label: "Now tracked",  cls: "sev-info",      ico: "+" },
+  };
+
+  function advisoryChangeFeed(data, onCountry) {
+    const c = (data && data.counts) || {};
+    const rows = (data && data.changes) || [];
+    const summary = h("div", { class: "detail-ratings" }, [
+      chip(c.escalated + " escalated", c.escalated ? "sev-critical" : "sev-info", "↑"),
+      chip(c.deescalated + " eased", c.deescalated ? "sev-low" : "sev-info", "↓"),
+      chip(c.revised + " revised", c.revised ? "sev-moderate" : "sev-info", "≈"),
+      chip(c.new + " newly tracked", "sev-info", "+"),
+    ]);
+    const body = rows.length
+      ? h("div", null, rows.map((r) => {
+          const m = CHG_META[r.kind] || CHG_META.revised;
+          const move = r.kind === "escalated" || r.kind === "deescalated"
+            ? ("Level " + r.prev_level + " → Level " + r.level)
+            : ("Level " + r.level);
+          return h("div", { class: "citation" }, [
+            h("div", { class: "sc-top" }, [
+              h("strong", null, r.country_name),
+              chip(m.label, m.cls, m.ico),
+            ]),
+            h("div", { class: "sd-reason" }, [
+              move + " · " + (r.level_label || "") + " · " + (r.source_name || ""),
+            ]),
+            h("div", { class: "sc-meta" }, [
+              h("span", { class: "sd-reason" }, "Detected " + API.relTime(r.changed_at)),
+              onCountry
+                ? h("button", { class: "btn small secondary", onclick: () => onCountry(r.country) },
+                    "Open " + r.country_name)
+                : null,
+            ]),
+          ]);
+        }))
+      : h("p", { class: "sd-reason" },
+          "No advisory level changes detected in the last " + (data.days || 14)
+          + " days. Baseline advice for " + (c.new || 0)
+          + " destinations is being tracked; a change here means a government "
+          + "actually moved or rewrote its advice.");
+
+    return h("div", { class: "panel", style: "margin-bottom:1rem" }, [
+      h("div", { class: "sc-top" }, [
+        h("h2", null, "What changed in government travel advice"),
+        h("span", { class: "sd-reason" }, "Last " + (data.days || 14) + " days"),
+      ]),
+      summary,
+      body,
+    ]);
+  }
+
   function cleanHeadline(t) { return (t || "").replace("[DEMO] ", ""); }
   function truncate(t, n) { t = t || ""; return t.length > n ? t.slice(0, n).trim() + "…" : t; }
 
@@ -181,7 +237,7 @@
   window.GSID_C = {
     h, chip, impactChip, confChip, urgencyChip, trendChip, ratingChips, scoreRing,
     storyCard, scoreBars, ratingRationale, advisoryConsensus, advisoryLevelChip,
-    cleanHeadline, truncate, loading, empty, toast,
+    advisoryChangeFeed, cleanHeadline, truncate, loading, empty, toast,
     IMPACT_ICON,
   };
 })();

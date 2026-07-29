@@ -257,6 +257,19 @@ def create_app(config: Config | None = None) -> Flask:
     def alerts():
         return jsonify({"alerts": repository.list_alerts(get_conn(), data_mode_param())})
 
+    @app.get("/api/advisory-changes")
+    def advisory_changes():
+        """What moved in government travel advice recently (change-detection)."""
+        args = request.args
+        try:
+            days = max(1, min(int(args.get("days", 14)), 90))
+        except (TypeError, ValueError):
+            days = 14
+        return jsonify(repository.advisory_changes(
+            get_conn(), days=days,
+            include_new=args.get("include_new") in ("1", "true"),
+        ))
+
     @app.get("/api/regional")
     def regional():
         return jsonify({"regions": repository.regional_watch(get_conn(), data_mode_param())})

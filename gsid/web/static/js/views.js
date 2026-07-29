@@ -1054,6 +1054,15 @@
             }))));
       }
 
+      // "What changed" feed — the payoff of advisory change-detection. Shown
+      // on arrival so the first question ("what moved?") is answered without
+      // having to pick a destination first. Loaded async; never blocks.
+      const changeHost = h("div");
+      wrap.appendChild(changeHost);
+      API.advisoryChanges().then((d) => {
+        changeHost.appendChild(C.advisoryChangeFeed(d, loadCountry));
+      }).catch(() => {});
+
       wrap.appendChild(briefHost);
       // deep link ?country=&origin=
       if (params && params.origin) { trip.origin = params.origin; originSel.value = params.origin; }

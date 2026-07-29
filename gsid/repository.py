@@ -7,9 +7,11 @@ UTC here; timezone conversion is a presentation concern handled client-side.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from . import db
+from .ingestion.advisory_levels import LEVEL_LABELS as ADVISORY_LEVEL_LABELS
 from .taxonomy import (
     CATEGORY_NAMES, REGION_NAMES, country_name, region_for_country,
 )
@@ -82,7 +84,6 @@ def list_stories(conn, filters: dict[str, Any] | None = None,
         add("confidence IN ('Confirmed','High')")
     if filters.get("new_today"):
         # Published (or, if unknown, first seen) within the last 24 hours.
-        from datetime import datetime, timezone, timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
             "%Y-%m-%dT%H:%M:%SZ")
         add("COALESCE(event_time, first_seen) >= ?", cutoff)
@@ -429,6 +430,78 @@ def _highest_impact(stories: list[dict]) -> str:
         if order.get(s.get("impact", "Low"), 0) > order.get(best, 0):
             best = s["impact"]
     return best
+
+
+def advisory_changes(conn, days: int = 14, limit: int = 40,
+                     include_new: bool = False) -> dict:
+    """What changed in government travel advice recently.
+
+    Reads the change-detection state written during ingestion. Three event
+    kinds are distinguished:
+
+      escalated / de-escalated — the level actually moved (the money signal)
+      revised                  — same level, but the advisory text changed
+      new                      — first time we tracked this destination
+
+    First sightings are counted but kept out of the list by default: on a fresh
+    database every destination is "new", which would bury the real moves.
+    """
+    from .ingestion.connectors import FEED_BY_ID
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(days, 0))).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
+    rows = conn.execute(
+        "SELECT feed_id, dest_country, level, prev_level, changed_at "
+        "FROM advisory_state WHERE changed_at >= ? ORDER BY changed_at DESC",
+        (cutoff,),
+    ).fetchall()
+
+    # Destination -> advisory story, so each change can deep-link to the brief.
+    story_by_country: dict[str, str] = {}
+    for r in conn.execute(
+        "SELECT sc.country AS c, s.id AS id FROM story s "
+        "JOIN story_country sc ON sc.story_id = s.id WHERE s.status='advisory'"
+    ).fetchall():
+        story_by_country.setdefault((r["c"] or "").lower(), r["id"])
+
+    counts = {"escalated": 0, "deescalated": 0, "revised": 0, "new": 0}
+    changes: list[dict] = []
+    for r in rows:
+        level, prev = r["level"] or 0, r["prev_level"] or 0
+        if prev <= 0:
+            kind = "new"
+        elif level > prev:
+            kind = "escalated"
+        elif level < prev:
+            kind = "deescalated"
+        else:
+            kind = "revised"
+        counts[kind] += 1
+        if kind == "new" and not include_new:
+            continue
+        feed = FEED_BY_ID.get(r["feed_id"])
+        code = (r["dest_country"] or "").lower()
+        changes.append({
+            "kind": kind,
+            "country": code,
+            "country_name": country_name(code),
+            "feed_id": r["feed_id"],
+            "source_name": feed.name if feed else r["feed_id"],
+            "gov": feed.country if feed else "",
+            "level": level,
+            "prev_level": prev,
+            "level_label": ADVISORY_LEVEL_LABELS.get(level, ""),
+            "prev_label": ADVISORY_LEVEL_LABELS.get(prev, ""),
+            "changed_at": r["changed_at"],
+            "story_id": story_by_country.get(code),
+        })
+
+    # Escalations first (worst-case bias), then most recent.
+    order = {"escalated": 0, "deescalated": 1, "revised": 2, "new": 3}
+    changes.sort(key=lambda c: (order.get(c["kind"], 9), -c["level"],
+                                c["changed_at"] or ""), reverse=False)
+    return {"days": days, "since": cutoff, "counts": counts,
+            "tracked": len(rows), "changes": changes[:limit]}
 
 
 def feed_health(conn) -> list[dict]:
