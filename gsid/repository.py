@@ -182,7 +182,8 @@ def _regulation_for_story(conn, story_id: str) -> dict | None:
 
 
 def list_alerts(conn, data_mode: str | None = None) -> list[dict]:
-    f = {"alerts_only": True}
+    # Latest-first so the newest alert leads (and drives the "new" badge).
+    f = {"alerts_only": True, "sort": "recent"}
     if data_mode:
         f["data_mode"] = data_mode
     stories = list_stories(conn, f, limit=50)

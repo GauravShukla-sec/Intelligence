@@ -474,6 +474,8 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }
 .kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem .8rem; }
+.kpi-link { display: block; color: inherit; text-decoration: none; transition: border-color .12s, transform .12s; }
+.kpi-link:hover, .kpi-link:focus-visible { border-color: var(--accent); transform: translateY(-1px); outline: none; }
 .kpi-num { font-size: 1.55rem; font-weight: 700; line-height: 1; display: flex; align-items: baseline; gap: .3rem; }
 .kpi-ico { font-size: .8rem; }
 .kpi-lbl { font-size: .74rem; color: var(--text-mute); margin-top: .3rem; text-transform: uppercase; letter-spacing: .05em; }

@@ -85,16 +85,25 @@
       document.body.classList.add("has-banner");
     }
 
-    // alert badge
-    try {
-      const a = await API.alerts();
-      const b = document.getElementById("alertBadge");
-      if (a.alerts.length) { b.textContent = a.alerts.length; b.hidden = false; }
-    } catch {}
+    // alert badge — count of UNSEEN critical alerts (clears once viewed)
+    await refreshAlertBadge();
 
     window.addEventListener("hashchange", render);
     render();
   }
+
+  // Badge shows how many critical alerts the visitor hasn't seen yet. The
+  // Alerts view marks them seen and calls this again to clear the badge.
+  async function refreshAlertBadge() {
+    try {
+      const a = await API.alerts();
+      const b = document.getElementById("alertBadge");
+      const n = API.alertsSeen.unseen(a.alerts).length;
+      if (n) { b.textContent = String(n); b.hidden = false; }
+      else { b.hidden = true; }
+    } catch {}
+  }
+  API.refreshAlertBadge = refreshAlertBadge;
 
   // ---------- theme ----------
   function applyTheme(t) {

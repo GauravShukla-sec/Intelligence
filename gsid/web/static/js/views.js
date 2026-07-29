@@ -67,10 +67,10 @@
           ]),
           h("p", { class: "hp-reason" }, p.posture.reason),
           h("div", { class: "kpi-row" }, [
-            kpi(brief.story_count, "Tracked", "◔", ""),
-            kpi(alertsCount, "Critical alerts", "▲", alertsCount ? "sev-critical" : "sev-info"),
-            kpi(deter, "Regions worsening", "▼", deter ? "sev-high" : "sev-info"),
-            kpi(p.regions_improving.length, "Regions improving", "▲", p.regions_improving.length ? "sev-low" : "sev-info"),
+            kpi(brief.story_count, "Tracked", "◔", "", "#/stories"),
+            kpi(alertsCount, "Critical alerts", "▲", alertsCount ? "sev-critical" : "sev-info", "#/alerts"),
+            kpi(deter, "Regions worsening", "▼", deter ? "sev-high" : "sev-info", "#/regional"),
+            kpi(p.regions_improving.length, "Regions improving", "▲", p.regions_improving.length ? "sev-low" : "sev-info", "#/regional"),
           ]),
         ]),
       ]);
@@ -118,13 +118,18 @@
 
   function slug(s) { return String(s || "").toLowerCase().replace(/[^a-z]/g, ""); }
 
-  function kpi(num, label, sym, cls) {
-    return h("div", { class: "kpi" }, [
+  function kpi(num, label, sym, cls, href) {
+    const kids = [
       h("div", { class: "kpi-num num " + (cls || "") }, [
         h("span", { class: "kpi-ico", "aria-hidden": "true" }, sym), String(num),
       ]),
       h("div", { class: "kpi-lbl" }, label),
-    ]);
+    ];
+    // A tile with a target is a real link (keyboard-accessible, shows what's
+    // behind the number); otherwise it's a plain stat.
+    return href
+      ? h("a", { class: "kpi kpi-link", href, "aria-label": label + ": " + num }, kids)
+      : h("div", { class: "kpi" }, kids);
   }
 
   function rankItem(s, i) {
@@ -282,7 +287,10 @@
   }
   function alertRow(a) {
     const al = a.alert || {};
-    return h("div", { class: "panel", style: "border-left:3px solid var(--sev-critical)" }, [
+    return h("div", { class: "panel alert-row", style: "border-left:3px solid var(--sev-critical);cursor:pointer",
+                      role: "button", tabindex: "0", "aria-label": C.cleanHeadline(a.headline),
+                      onclick: () => go("#/story/" + a.id),
+                      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("#/story/" + a.id); } } }, [
       h("div", { class: "sc-top" }, [h("h3", null, h("a", { href: "#/story/" + a.id }, C.cleanHeadline(a.headline))), C.confChip(a.confidence)]),
       h("div", { class: "sc-meta" }, [C.chip(a.location_text || a.region_name, "", "◍"), C.impactChip(a.impact), C.urgencyChip(a.urgency)]),
       h("div", { class: "kv", style: "margin-top:.5rem" }, [
@@ -308,8 +316,11 @@
     const node = h("div");
     mount(node, async () => {
       const data = await API.alerts();
+      // Viewing the list marks these alerts seen and clears the nav badge.
+      API.alertsSeen.markSeen(data.alerts);
+      if (API.refreshAlertBadge) API.refreshAlertBadge();
       const wrap = h("div");
-      wrap.appendChild(head("Critical Alerts", "Only developments meeting the prompt-action threshold appear here."));
+      wrap.appendChild(head("Critical Alerts", "Only developments meeting the prompt-action threshold appear here. Newest first."));
       wrap.appendChild(data.alerts.length ? h("div", { class: "grid" }, data.alerts.map(alertRow))
         : C.empty("No active critical alerts. This is intentional — the desk avoids alert fatigue."));
       return wrap;

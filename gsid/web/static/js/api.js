@@ -44,6 +44,24 @@
   API.challenge = (id) => req("/api/stories/" + encodeURIComponent(id) + "/challenge");
   API.brief = () => req("/api/brief");
   API.alerts = () => req("/api/alerts");
+
+  // Per-visitor "seen" tracking for the Critical Alerts badge (localStorage).
+  // An alert's signature includes last_updated, so a re-fired/updated alert
+  // becomes unseen again.
+  API.alertsSeen = {
+    KEY: "seen_alerts",
+    sig(a) { return (a.id || "") + "|" + (a.last_updated || ""); },
+    _set() { return new Set(LS.get(this.KEY, [])); },
+    markSeen(alerts) {
+      const s = this._set();
+      (alerts || []).forEach((a) => s.add(this.sig(a)));
+      LS.set(this.KEY, Array.from(s));
+    },
+    unseen(alerts) {
+      const s = this._set();
+      return (alerts || []).filter((a) => !s.has(this.sig(a)));
+    },
+  };
   API.regional = () => req("/api/regional");
   API.regulations = () => req("/api/regulations");
   API.mapData = () => req("/api/map");
