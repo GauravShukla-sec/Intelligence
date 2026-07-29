@@ -99,6 +99,17 @@
         h("span", { title: "Last updated " + API.fmtTime(s.last_updated) }, "Updated " + API.relTime(s.last_updated)),
       ]),
     ]);
+    // Near-duplicate coverage folded into this lead (from ?group=1).
+    if (s.similar && s.similar.length) {
+      const list = h("div", { class: "similar-list", hidden: true },
+        s.similar.map((x) => h("a", { class: "similar-item", href: "#/story/" + x.id,
+          onclick: (e) => e.stopPropagation() }, cleanHeadline(x.headline))));
+      const toggle = h("button", { class: "similar-toggle",
+        onclick: (e) => { e.stopPropagation(); list.hidden = !list.hidden; toggle.setAttribute("aria-expanded", String(!list.hidden)); },
+        "aria-expanded": "false" },
+        "+" + s.similar.length + " similar report" + (s.similar.length > 1 ? "s" : ""));
+      return h("div", { class: "story-group" }, [card, toggle, list]);
+    }
     return card;
   }
 

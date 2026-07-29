@@ -206,6 +206,10 @@ def create_app(config: Config | None = None) -> Flask:
         f["data_mode"] = f.get("data_mode") or data_mode_param()
         limit = min(int(request.args.get("limit", 100)), 300)
         offset = int(request.args.get("offset", 0))
+        # ?group=1 collapses near-duplicate coverage into lead + `similar`.
+        if request.args.get("group") in ("1", "true"):
+            return jsonify({"stories": repository.list_stories_grouped(
+                get_conn(), f, limit, offset)})
         return jsonify({"stories": repository.list_stories(get_conn(), f, limit, offset)})
 
     @app.get("/api/stories/<story_id>")

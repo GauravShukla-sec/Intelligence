@@ -375,6 +375,17 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 .map-country.clickable:hover { stroke: var(--accent); stroke-width: 1; fill-opacity: 1; }
 .map-dot { cursor: pointer; }
 
+/* Collapsed near-duplicate coverage in story lists */
+.story-group { display: flex; flex-direction: column; }
+.similar-toggle {
+  align-self: flex-start; margin-top: -.4rem; background: none; border: none;
+  color: var(--text-mute); font: inherit; font-size: .78rem; cursor: pointer;
+  padding: .25rem .1rem;
+}
+.similar-toggle:hover { color: var(--accent); }
+.similar-list { display: flex; flex-direction: column; gap: .25rem; padding: .1rem 0 .4rem .2rem; }
+.similar-item { font-size: .82rem; color: var(--text-dim); }
+
 /* Learn / quiz / scenario */
 .quiz-q { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: .9rem; margin-bottom: .8rem; }
 .quiz-opt { display: block; width: 100%; text-align: left; margin: .35rem 0; padding: .55rem .7rem; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }

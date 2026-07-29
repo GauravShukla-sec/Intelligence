@@ -347,6 +347,7 @@
       listWrap.appendChild(C.loading());
       const qs = new URLSearchParams();
       Object.keys(filters).forEach((k) => { if (filters[k]) qs.set(k, filters[k]); });
+      qs.set("group", "1");  // collapse near-duplicate coverage into lead + similar
       const data = await API.stories(qs.toString());
       listWrap.innerHTML = "";
       if (!data.stories.length) { listWrap.appendChild(C.empty("No stories match these filters.")); return; }
@@ -514,6 +515,19 @@
         h("p", { class: "sd-reason" }, "Every claim links to its exact source. Tier 1 = primary/authoritative → Tier 4 = unverified signal."),
         h("div", null, (s.citations || []).map(citationEl)),
       ]));
+
+      // similar coverage (related stories on the same event)
+      if (s.similar && s.similar.length) {
+        right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
+          h("h2", null, "Similar coverage"),
+          h("p", { class: "sd-reason" }, "Other tracked reports on a closely related event."),
+          h("ul", { class: "clean" }, s.similar.map((x) =>
+            h("li", null, [
+              h("a", { href: "#/story/" + x.id }, C.cleanHeadline(x.headline)),
+              x.location_text ? h("span", { class: "sd-reason" }, " · " + x.location_text) : null,
+            ]))),
+        ]));
+      }
 
       // regulation panel if present
       if (s.regulation) right.appendChild(regulationPanel(s.regulation));

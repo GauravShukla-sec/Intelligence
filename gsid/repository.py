@@ -12,6 +12,7 @@ from typing import Any
 
 from . import db
 from .ingestion.advisory_levels import LEVEL_LABELS as ADVISORY_LEVEL_LABELS
+from .ingestion.dedup import jaccard, signature
 from .taxonomy import (
     CATEGORY_NAMES, REGION_NAMES, country_name, region_for_country,
 )
@@ -112,6 +113,78 @@ def list_stories(conn, filters: dict[str, Any] | None = None,
     return [_story_row_to_summary(r) for r in rows]
 
 
+# Near-duplicate coverage of the *same* event (collapse in lists). Tuned to
+# fold near-identical headlines while leaving a developing story's distinct
+# beats ("minister resigns" vs "protesters celebrate") as separate stories.
+_SIM_COLLAPSE = 0.5
+# Looser bar for "you might also want to read" suggestions on a story page.
+_SIM_RELATED = 0.36
+
+
+def group_similar_stories(stories: list[dict], threshold: float = _SIM_COLLAPSE) -> list[dict]:
+    """Collapse near-duplicate coverage of the same event by headline similarity.
+
+    Input is a pre-ordered story list (highest-ranked first). Each returned
+    item is the group's lead (its highest-ranked member, i.e. the first seen)
+    with a ``similar`` list of the folded-in duplicates. Non-destructive — the
+    underlying stories are untouched.
+    """
+    groups: list[dict] = []
+    for s in stories:
+        sig = signature(s.get("headline", ""))
+        for g in groups:
+            if sig and jaccard(sig, g["sig"]) >= threshold:
+                g["members"].append(s)
+                g["sig"] |= sig
+                break
+        else:
+            groups.append({"members": [s], "sig": set(sig)})
+    out: list[dict] = []
+    for g in groups:
+        lead = dict(g["members"][0])
+        lead["similar"] = [
+            {"id": m["id"], "headline": m["headline"],
+             "primary_country": m.get("primary_country"),
+             "location_text": m.get("location_text")}
+            for m in g["members"][1:]
+        ]
+        out.append(lead)
+    return out
+
+
+def list_stories_grouped(conn, filters: dict[str, Any] | None = None,
+                         limit: int = 100, offset: int = 0) -> list[dict]:
+    """list_stories with near-duplicate coverage collapsed into lead + similar."""
+    raw = list_stories(conn, filters, limit=min(limit * 3, 300), offset=offset)
+    return group_similar_stories(raw)[:limit]
+
+
+def related_stories(conn, story_id: str, limit: int = 6,
+                    threshold: float = _SIM_RELATED) -> list[dict]:
+    """Other stories covering a similar event, ranked by headline similarity."""
+    target = conn.execute(
+        "SELECT headline FROM story WHERE id=?", (story_id,)).fetchone()
+    if not target:
+        return []
+    tsig = signature(target["headline"])
+    if not tsig:
+        return []
+    rows = conn.execute(
+        "SELECT id, headline, primary_country, location_text, relevance_score "
+        "FROM story WHERE id<>? AND (status IS NULL OR status!='advisory') "
+        "ORDER BY last_updated DESC LIMIT 500", (story_id,)).fetchall()
+    scored = []
+    for r in rows:
+        sc = jaccard(tsig, signature(r["headline"]))
+        if sc >= threshold:
+            scored.append((sc, r))
+    scored.sort(key=lambda x: (-x[0], -(x[1]["relevance_score"] or 0)))
+    return [{"id": r["id"], "headline": r["headline"],
+             "primary_country": r["primary_country"],
+             "location_text": r["location_text"], "similarity": round(sc, 2)}
+            for sc, r in scored[:limit]]
+
+
 def get_story(conn, story_id: str) -> dict | None:
     row = conn.execute("SELECT * FROM story WHERE id=?", (story_id,)).fetchone()
     if row is None:
@@ -144,6 +217,7 @@ def get_story(conn, story_id: str) -> dict | None:
         (story_id,)).fetchall())
     story["alert"] = _alert(conn, story_id)
     story["regulation"] = _regulation_for_story(conn, story_id)
+    story["similar"] = related_stories(conn, story_id)
     return story
 
 
