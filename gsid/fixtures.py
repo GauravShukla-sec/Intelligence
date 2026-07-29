@@ -475,7 +475,113 @@ def _demo_stories() -> list[StoryDraft]:
 
 
 # --------------------------------------------------------------------------
-# Demo regulations (D-domain tracker)
+# Real regulations (D-domain tracker) — curated reference of live frameworks.
+# Facts (effective dates, reporting windows) reflect the enacted texts; verify
+# national transposition specifics against the linked official source.
+# --------------------------------------------------------------------------
+def reference_regulations() -> list[dict]:
+    return [
+        {
+            "id": "reg_nis2", "title": "NIS2 Directive (EU 2022/2555) — cybersecurity risk & incident reporting",
+            "jurisdiction": "European Union", "framework": "NIS2", "status": "enforced",
+            "effective_date": "2024-10-18",
+            "affected": "Essential & important entities: energy, transport, banking, health, water, digital infrastructure, ICT service management, public administration, and larger manufacturers.",
+            "obligations": "Risk-management measures, management-body accountability, supply-chain security, and incident handling proportionate to risk.",
+            "reporting": "Early warning within 24h of awareness; incident notification within 72h; final report within one month.",
+            "penalties": "Up to €10m or 2% of global turnover (essential entities); management liability per national transposition.",
+            "implications": "Formalize incident-reporting runbooks and OT/IT convergence controls; confirm in-scope status under national law.",
+            "prep_steps": "Confirm scope; map the 24/72h/1-month workflow; test timelines; brief the management body on accountability.",
+            "source_url": "https://eur-lex.europa.eu/eli/dir/2022/2555/oj",
+        },
+        {
+            "id": "reg_dora", "title": "DORA (EU 2022/2554) — Digital Operational Resilience Act",
+            "jurisdiction": "European Union", "framework": "DORA", "status": "enforced",
+            "effective_date": "2025-01-17",
+            "affected": "Financial entities (banks, insurers, investment firms, crypto-asset providers) and their critical ICT third-party providers.",
+            "obligations": "ICT risk-management framework, resilience testing (incl. threat-led penetration testing), and oversight of ICT third parties.",
+            "reporting": "Classify and report major ICT-related incidents to competent authorities within regulatory deadlines; maintain a register of information on ICT contracts.",
+            "penalties": "Supervisory measures and periodic penalty payments (up to 1% of average daily worldwide turnover for critical ICT providers).",
+            "implications": "Map ICT concentration risk; align incident classification with DORA thresholds; update third-party contract clauses.",
+            "prep_steps": "Build the register of information; define incident classification; schedule resilience testing.",
+            "source_url": "https://eur-lex.europa.eu/eli/reg/2022/2554/oj",
+        },
+        {
+            "id": "reg_cer", "title": "CER Directive (EU 2022/2557) — resilience of critical entities",
+            "jurisdiction": "European Union", "framework": "CER", "status": "enforced",
+            "effective_date": "2024-10-18",
+            "affected": "Entities designated critical across energy, transport, banking, health, water, food, digital infrastructure and public administration.",
+            "obligations": "Resilience risk assessments, physical resilience measures, background checks where permitted, and incident notification.",
+            "reporting": "Notify significant incidents to the competent authority per national rules.",
+            "penalties": "Set by national transposition; oversight by designated authorities.",
+            "implications": "Pairs physical resilience with NIS2 cyber duties — align business-impact analysis and site criticality.",
+            "prep_steps": "Confirm designation; integrate CER into enterprise risk management; run it alongside the NIS2 workstream.",
+            "source_url": "https://eur-lex.europa.eu/eli/dir/2022/2557/oj",
+        },
+        {
+            "id": "reg_csddd", "title": "CSDDD (EU 2024/1760) — Corporate Sustainability Due Diligence",
+            "jurisdiction": "European Union", "framework": "CSDDD", "status": "enacted",
+            "effective_date": "2027-07-26",
+            "affected": "Large EU companies and non-EU companies with substantial EU turnover; effects cascade to suppliers in the chain of activities.",
+            "obligations": "Human-rights and environmental due diligence across the chain of activities, plus a climate transition plan.",
+            "reporting": "Publish due-diligence outcomes; phased application begins 2027 for the largest companies.",
+            "penalties": "Fines set by member states (turnover-based) and civil liability for harms.",
+            "implications": "Extend supplier screening beyond security to human-rights/environmental risk; expect cascaded questionnaires.",
+            "prep_steps": "Map the chain of activities; establish grievance mechanisms; prepare the climate transition plan.",
+            "source_url": "https://eur-lex.europa.eu/eli/dir/2024/1760/oj",
+        },
+        {
+            "id": "reg_cbam", "title": "EU CBAM (Reg 2023/956) — Carbon Border Adjustment Mechanism",
+            "jurisdiction": "European Union", "framework": "CBAM", "status": "effective",
+            "effective_date": "2026-01-01",
+            "affected": "Importers into the EU of iron & steel, aluminium, cement, fertilisers, electricity and hydrogen.",
+            "obligations": "Definitive regime from 2026: authorised CBAM declarant status, purchase/surrender of CBAM certificates for embedded emissions.",
+            "reporting": "Annual CBAM declaration of embedded emissions; the transitional reporting phase ran from Oct 2023.",
+            "penalties": "Penalties for missing certificate surrender, broadly aligned with the EU ETS excess-emissions penalty.",
+            "implications": "Obtain verified emissions data from non-EU suppliers; budget for certificate costs in landed price.",
+            "prep_steps": "Register as an authorised declarant; collect supplier emissions data; model certificate exposure.",
+            "source_url": "https://taxation-customs.ec.europa.eu/carbon-border-adjustment-mechanism_en",
+        },
+        {
+            "id": "reg_eudr", "title": "EUDR (EU 2023/1115) — Deforestation-free products regulation",
+            "jurisdiction": "European Union", "framework": "EUDR", "status": "effective",
+            "effective_date": "2025-12-30",
+            "affected": "Operators and traders placing cattle, cocoa, coffee, oil palm, rubber, soya and wood (and derived products) on the EU market.",
+            "obligations": "Due diligence proving products are deforestation-free and legal, with geolocation of production plots.",
+            "reporting": "Submit due-diligence statements via the EU information system; large operators from 30 Dec 2025, SMEs from 30 Jun 2026.",
+            "penalties": "Fines up to at least 4% of EU turnover, confiscation of products/revenues, exclusion from public procurement.",
+            "implications": "Collect plot-level geolocation from agricultural suppliers; integrate traceability into procurement.",
+            "prep_steps": "Identify in-scope commodities; obtain geolocation data; build the due-diligence statement workflow.",
+            "source_url": "https://environment.ec.europa.eu/topics/forests/deforestation/regulation-deforestation-free-products_en",
+        },
+        {
+            "id": "reg_ai_act", "title": "EU AI Act (Reg 2024/1689) — risk-based AI regulation",
+            "jurisdiction": "European Union", "framework": "EU AI Act", "status": "effective",
+            "effective_date": "2026-08-02",
+            "affected": "Providers and deployers of AI systems placed on or used in the EU market.",
+            "obligations": "Phased: prohibited practices since Feb 2025; general-purpose AI duties since Aug 2025; high-risk system obligations from Aug 2026.",
+            "reporting": "Serious-incident reporting for high-risk systems; conformity assessment and registration in the EU database.",
+            "penalties": "Up to €35m or 7% of global turnover for prohibited-practice breaches.",
+            "implications": "Inventory AI systems and classify by risk tier; assign accountability for high-risk deployments.",
+            "prep_steps": "Build an AI system inventory; screen for prohibited uses; prepare conformity documentation for high-risk uses.",
+            "source_url": "https://eur-lex.europa.eu/eli/reg/2024/1689/oj",
+        },
+        {
+            "id": "reg_ctpat", "title": "US CTPAT — Customs-Trade Partnership Against Terrorism (Minimum Security Criteria)",
+            "jurisdiction": "United States (CBP)", "framework": "CTPAT", "status": "enforced",
+            "effective_date": "2020-01-01",
+            "affected": "CTPAT-certified importers, carriers, and eligible supply-chain partners seeking trade-facilitation benefits.",
+            "obligations": "Maintain the Minimum Security Criteria across cybersecurity, conveyance & seal, physical access, and agricultural security.",
+            "reporting": "Report incidents/anomalies to CBP; complete the annual security profile review and post-incident corrective actions.",
+            "penalties": "Suspension or removal from the program and loss of trade-facilitation benefits.",
+            "implications": "Sync seal chain-of-custody and site controls with current cargo-theft advisories.",
+            "prep_steps": "Re-verify seal procedures; validate access control & CCTV; close open corrective actions.",
+            "source_url": "https://www.cbp.gov/border-security/ports-entry/cargo-security/ctpat",
+        },
+    ]
+
+
+# --------------------------------------------------------------------------
+# Demo regulations (illustrative; only used in demo/hybrid mode)
 # --------------------------------------------------------------------------
 def demo_regulations() -> list[dict]:
     return [
@@ -732,7 +838,7 @@ def demo_quiz() -> list[dict]:
 def demo_scenarios() -> list[dict]:
     return [
         {
-            "id": "scn_protest", "story_id": "demo_southasia_unrest",
+            "id": "scn_protest",
             "title": "Protests near an industrial belt",
             "prompt": "You manage security for a facility 20 km from expanding fuel-price protests. "
                       "Transport is operational but evening movement restrictions are in force in two "

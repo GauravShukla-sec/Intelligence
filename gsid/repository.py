@@ -193,7 +193,13 @@ def list_alerts(conn, data_mode: str | None = None) -> list[dict]:
 
 
 def list_regulations(conn, data_mode: str | None = None) -> list[dict]:
-    rows = conn.execute("SELECT * FROM regulation ORDER BY updated_at DESC").fetchall()
+    where = ""
+    if data_mode == "live":
+        where = "WHERE is_demo=0"
+    elif data_mode == "demo":
+        where = "WHERE is_demo=1"
+    rows = conn.execute(
+        f"SELECT * FROM regulation {where} ORDER BY updated_at DESC").fetchall()
     return db.rows_to_dicts(rows)
 
 

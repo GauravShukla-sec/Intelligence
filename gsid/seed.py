@@ -16,32 +16,36 @@ log = logging.getLogger("gsid.seed")
 def seed_all(conn, config, force: bool = False) -> dict:
     """Idempotent seed. Uses the heuristic analyzer for demo data so the demo
     is deterministic and needs no credentials, regardless of GSID_AI_PROVIDER."""
+    live = (config.data_mode or "").lower() == "live"
+
+    # Reference content is real and kept current on every startup (idempotent):
+    # the regulatory tracker and the learning bank are not "demo" data.
+    _seed_regulations(conn)
+    _seed_quiz(conn)
+    _seed_scenarios(conn)
+    _seed_preferences(conn, config)
+
+    if live:
+        # A live desk shows only real developments — purge any illustrative demo
+        # stories/regulations left from an earlier seed (real ingested data has
+        # is_demo=0; reference regulations were just seeded as is_demo=0).
+        conn.execute("DELETE FROM story WHERE is_demo=1")
+        conn.execute("DELETE FROM regulation WHERE is_demo=1")
+        conn.commit()
+        return {"skipped": False, "demo_stories": 0, "mode": "live"}
+
     existing = conn.execute(
         "SELECT COUNT(*) AS n FROM story WHERE is_demo=1").fetchone()["n"]
-
     if existing and not force:
-        # Demo stories already present, so referenced stories exist: keep the
-        # quiz + scenario learning bank current via idempotent upserts (it's
-        # reference content, seeded independently of the one-time story seed).
-        _seed_quiz(conn)
-        _seed_scenarios(conn)
-        _seed_preferences(conn, config)
         conn.commit()
         return {"skipped": True, "demo_stories": existing}
 
     from .analysis.heuristic import HeuristicAnalyzer
     analyzer = HeuristicAnalyzer()
-
     n = 0
     for draft in fixtures.demo_stories():
         save_story(conn, draft, analyzer, actor="system")
         n += 1
-
-    _seed_regulations(conn)
-    # After stories, so a scenario/quiz that links to a demo story satisfies its FK.
-    _seed_quiz(conn)
-    _seed_scenarios(conn)
-    _seed_preferences(conn, config)
     db.audit(conn, "system", "seed_demo", detail={"stories": n})
     conn.commit()
     log.info("seeded %d demo stories", n)
@@ -49,12 +53,13 @@ def seed_all(conn, config, force: bool = False) -> dict:
 
 
 def _seed_regulations(conn) -> None:
-    for r in fixtures.demo_regulations():
+    """Seed the real, curated regulation reference set (is_demo=0)."""
+    for r in fixtures.reference_regulations():
         conn.execute(
             "INSERT OR REPLACE INTO regulation(id,story_id,title,jurisdiction,framework,"
             "status,effective_date,affected,obligations,reporting,penalties,implications,"
             "prep_steps,source_url,updated_at,is_demo) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
             (r["id"], r.get("story_id"), r["title"], r["jurisdiction"], r.get("framework"),
              r["status"], r.get("effective_date"), r.get("affected"), r.get("obligations"),
              r.get("reporting"), r.get("penalties"), r.get("implications"),
