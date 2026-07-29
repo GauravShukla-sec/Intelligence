@@ -50,7 +50,9 @@
   }
 
   function riskOpacity(count) {
-    return Math.min(0.82, 0.3 + Math.min(count, 6) * 0.088);
+    // High floor so every risk colour (Low→Critical) reads clearly; volume
+    // only nudges it. The hue carries the impact, not the opacity.
+    return Math.min(0.9, 0.62 + Math.min(count, 6) * 0.045);
   }
 
   function buildSvg(geo, data, onPoint, onCountry) {

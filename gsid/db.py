@@ -41,8 +41,43 @@ def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     _migrate(conn)
     _cleanup_stale_citations(conn)
+    _backfill_country_tags(conn)
     _seed_reference(conn)
     conn.commit()
+
+
+def _backfill_country_tags(conn: sqlite3.Connection) -> None:
+    """One-time re-tag of existing developments to the countries they mention.
+
+    Early ingestion tagged stories to their publisher's country, so the map and
+    country filters missed obvious subjects (e.g. Iran). This rebuilds
+    story_country from the headline/summary text and repoints primary_country /
+    region to the lead subject. Advisories are left untouched (their country IS
+    the destination). Idempotent: guarded by a one-shot preference marker.
+    """
+    from .taxonomy import mentioned_countries, region_for_country
+
+    marker = conn.execute(
+        "SELECT 1 FROM preference WHERE key='country_retag_v1'").fetchone()
+    if marker:
+        return
+    rows = conn.execute(
+        "SELECT id, headline, summary FROM story "
+        "WHERE (status IS NULL OR status != 'advisory')").fetchall()
+    for r in rows:
+        codes = mentioned_countries(f"{r['headline'] or ''} {r['summary'] or ''}")
+        if not codes:
+            continue  # leave stories with no detectable subject as-is
+        conn.execute("DELETE FROM story_country WHERE story_id=?", (r["id"],))
+        for c in codes:
+            conn.execute(
+                "INSERT OR IGNORE INTO story_country(story_id, country) VALUES (?,?)",
+                (r["id"], c))
+        conn.execute(
+            "UPDATE story SET primary_country=?, primary_region=? WHERE id=?",
+            (codes[0], region_for_country(codes[0]), r["id"]))
+    conn.execute(
+        "INSERT OR REPLACE INTO preference(key, value) VALUES ('country_retag_v1','done')")
 
 
 def _cleanup_stale_citations(conn: sqlite3.Connection) -> None:

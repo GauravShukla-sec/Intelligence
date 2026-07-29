@@ -6,6 +6,8 @@ scoring engine, ingestion pipeline, API and UI all speak the same language.
 
 from __future__ import annotations
 
+import re
+
 # --------------------------------------------------------------------------
 # Regions (used for the Regional Security Watch and the map)
 # --------------------------------------------------------------------------
@@ -148,7 +150,52 @@ NAME_TO_ISO.update({
     "u.k.": "gb", "britain": "gb", "great britain": "gb", "uae": "ae",
     "south korea": "kr", "north korea": "kp", "czech republic": "cz",
     "the gambia": "gm", "drc": "cd", "democratic republic of the congo": "cd",
+    "saudi": "sa", "russian": "ru", "chinese": "cn", "ukrainian": "ua",
 })
+
+
+# --------------------------------------------------------------------------
+# Country-mention extraction — tag a story to the countries it is ABOUT,
+# not to its publisher. Names of >=4 chars are matched with word boundaries
+# (so "Niger" never matches "Nigeria"); the ambiguous 2-letter US/UK are
+# matched case-sensitively as uppercase tokens to avoid the pronoun "us".
+# --------------------------------------------------------------------------
+_MENTION_NAMES = sorted(
+    (n for n in NAME_TO_ISO if len(n) >= 4),
+    key=len, reverse=True,  # longest first so "south korea" beats "korea"
+)
+_MENTION_RE = re.compile(
+    r"\b(" + "|".join(re.escape(n) for n in _MENTION_NAMES) + r")\b",
+    re.IGNORECASE,
+)
+_ABBR_RE = [
+    (re.compile(r"\bU\.?S\.?A?\.?\b"), "us"),   # US, USA, U.S., U.S.A.
+    (re.compile(r"\bU\.?K\.?\b"), "gb"),        # UK, U.K.
+]
+
+
+def mentioned_countries(text: str | None, limit: int = 8) -> list[str]:
+    """ISO-2 codes of countries named in the text, in first-seen order.
+
+    Used to geo-tag a development to its subject countries. Case-insensitive
+    for full names; case-sensitive for the US/UK abbreviations.
+    """
+    if not text:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for rx, code in _ABBR_RE:
+        if code not in seen and rx.search(text):
+            seen.add(code)
+            found.append(code)
+    for m in _MENTION_RE.finditer(text):
+        code = NAME_TO_ISO.get(m.group(1).lower())
+        if code and code not in seen:
+            seen.add(code)
+            found.append(code)
+            if len(found) >= limit:
+                break
+    return found
 
 
 def resolve_country(text: str | None) -> str | None:
