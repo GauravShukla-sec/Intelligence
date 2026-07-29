@@ -18,8 +18,15 @@ def seed_all(conn, config, force: bool = False) -> dict:
     is deterministic and needs no credentials, regardless of GSID_AI_PROVIDER."""
     existing = conn.execute(
         "SELECT COUNT(*) AS n FROM story WHERE is_demo=1").fetchone()["n"]
+
     if existing and not force:
+        # Demo stories already present, so referenced stories exist: keep the
+        # quiz + scenario learning bank current via idempotent upserts (it's
+        # reference content, seeded independently of the one-time story seed).
+        _seed_quiz(conn)
+        _seed_scenarios(conn)
         _seed_preferences(conn, config)
+        conn.commit()
         return {"skipped": True, "demo_stories": existing}
 
     from .analysis.heuristic import HeuristicAnalyzer
@@ -31,6 +38,7 @@ def seed_all(conn, config, force: bool = False) -> dict:
         n += 1
 
     _seed_regulations(conn)
+    # After stories, so a scenario/quiz that links to a demo story satisfies its FK.
     _seed_quiz(conn)
     _seed_scenarios(conn)
     _seed_preferences(conn, config)

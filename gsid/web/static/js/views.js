@@ -741,7 +741,7 @@
       const scenHost = h("div", { class: "panel" });
       wrap.appendChild(scenHost);
       if (scenList.scenarios.length) {
-        renderScenario(scenHost, scenList.scenarios[0].id);
+        renderScenario(scenHost, scenList.scenarios);
       } else scenHost.appendChild(C.empty("No scenario available."));
 
       // Quiz
@@ -754,12 +754,21 @@
     return node;
   };
 
-  async function renderScenario(host, id) {
+  async function renderScenario(host, list, currentId) {
+    // Rotate to a fresh scenario, avoiding an immediate repeat when possible.
+    let pool = list;
+    if (currentId && list.length > 1) pool = list.filter((s) => s.id !== currentId);
+    const pick = pool[Math.floor(Math.random() * pool.length)];
     host.innerHTML = "";
     host.appendChild(C.loading());
-    const sc = await API.scenario(id);
+    const sc = await API.scenario(pick.id);
     host.innerHTML = "";
-    host.appendChild(h("h2", null, "10 · Interactive Scenario"));
+    host.appendChild(h("div", { class: "sc-top" }, [
+      h("h2", null, "10 · Interactive Scenario"),
+      list.length > 1
+        ? h("button", { class: "btn secondary small", onclick: () => renderScenario(host, list, sc.id) }, "New scenario")
+        : null,
+    ]));
     host.appendChild(h("h3", null, sc.title));
     host.appendChild(h("p", null, sc.prompt));
     const analysisHost = h("div");

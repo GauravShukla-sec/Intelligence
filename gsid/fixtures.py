@@ -571,6 +571,161 @@ def demo_quiz() -> list[dict]:
             "explanation": "Velocity is the speed at which a risk moves from onset to impact — key "
                            "for deciding response tempo.",
         },
+        # ---- difficulty 1 (fundamentals) ----
+        {
+            "id": "q_advisory_level4", "difficulty": 1,
+            "question": "On the standard 1–4 travel-advisory scale, which level means 'Do not travel'?",
+            "options": ["Level 1", "Level 2", "Level 3", "Level 4"],
+            "answer_index": 3,
+            "explanation": "Level 4 is the most severe — 'Do not travel'. Level 1 is 'exercise normal "
+                           "precautions'.",
+        },
+        {
+            "id": "q_tier1", "difficulty": 1,
+            "question": "A 'Tier 1' source on this desk is:",
+            "options": ["A viral social-media post", "A primary/authoritative source such as a "
+                        "government agency", "An anonymous tip", "An opinion column"],
+            "answer_index": 1,
+            "explanation": "Tier 1 = primary/authoritative (e.g., CISA, a foreign ministry). Tier 4 = "
+                           "unverified signal.",
+        },
+        {
+            "id": "q_alert_fatigue", "difficulty": 1,
+            "question": "Critical Alerts are restricted to prompt-action items mainly to:",
+            "options": ["Increase engagement", "Avoid alert fatigue and preserve signal",
+                        "Satisfy regulators", "Rank sources"],
+            "answer_index": 1,
+            "explanation": "If everything is an alert, nothing is. Reserving alerts for action-worthy "
+                           "items keeps them meaningful.",
+        },
+        {
+            "id": "q_duty_of_care", "difficulty": 1,
+            "question": "'Duty of care' in corporate security refers to:",
+            "options": ["Maximizing margin", "The obligation to protect employee/traveller safety",
+                        "Data-retention policy", "Vendor selection"],
+            "answer_index": 1,
+            "explanation": "Duty of care is the organisation's responsibility for the safety of its "
+                           "people — it drives the highest relevance weighting.",
+        },
+        {
+            "id": "q_domain_sanctions", "difficulty": 1,
+            "question": "A new sanctions designation belongs primarily in which domain?",
+            "options": ["Natural hazards", "Laws, Regulations & Compliance", "Cyber-physical",
+                        "Employee safety"],
+            "answer_index": 1,
+            "explanation": "Sanctions are a regulatory/compliance matter, though they often carry "
+                           "supply-chain second-order effects.",
+        },
+        # ---- difficulty 2 (applied) ----
+        {
+            "id": "q_circular", "difficulty": 2,
+            "question": "Three outlets all trace back to the same single wire report. This is:",
+            "options": ["Independent corroboration", "Circular reporting", "A primary source",
+                        "Confirmed intelligence"],
+            "answer_index": 1,
+            "explanation": "Repetition of one origin is not corroboration — the desk flags this as "
+                           "circular reporting so it doesn't inflate confidence.",
+        },
+        {
+            "id": "q_consensus_worstcase", "difficulty": 2,
+            "question": "Two governments rate a destination Level 2 and Level 4. A worst-case "
+                        "cross-government consensus reports:",
+            "options": ["Level 2", "The average (Level 3)", "Level 4", "No level"],
+            "answer_index": 2,
+            "explanation": "Worst-case never hides a stricter advisory behind a milder one, so the "
+                           "consensus is Level 4 — with the divergence flagged.",
+        },
+        {
+            "id": "q_ctpat", "difficulty": 2,
+            "question": "CTPAT is primarily concerned with:",
+            "options": ["Data privacy", "Supply-chain and customs security", "Aviation safety",
+                        "Financial disclosure"],
+            "answer_index": 1,
+            "explanation": "CTPAT (Customs-Trade Partnership Against Terrorism) secures the supply "
+                           "chain into the US.",
+        },
+        {
+            "id": "q_kev", "difficulty": 2,
+            "question": "CISA's KEV catalog lists vulnerabilities that are:",
+            "options": ["Theoretical", "Known to be actively exploited", "Already patched everywhere",
+                        "Low severity"],
+            "answer_index": 1,
+            "explanation": "KEV = Known Exploited Vulnerabilities — evidence of active exploitation, so "
+                           "they're prioritised for remediation.",
+        },
+        {
+            "id": "q_geo_scope", "difficulty": 2,
+            "question": "A development confined to one facility with no spillover is best scoped as:",
+            "options": ["Global", "Regional", "National", "Local"],
+            "answer_index": 3,
+            "explanation": "Geographic scope should match the actual footprint; over-scoping distorts "
+                           "prioritisation.",
+        },
+        {
+            "id": "q_provenance", "difficulty": 2,
+            "question": "The soundest way to raise confidence in a claim is to:",
+            "options": ["Repeat it more often", "Obtain independent corroboration from a higher-tier "
+                        "source", "Wait 24 hours", "Increase its prominence"],
+            "answer_index": 1,
+            "explanation": "Confidence rises with independent, higher-tier corroboration — not with "
+                           "repetition or time alone.",
+        },
+        # ---- difficulty 3 (nuanced) ----
+        {
+            "id": "q_low_likelihood_high_impact", "difficulty": 3,
+            "question": "A low-likelihood but catastrophic-impact event should generally be:",
+            "options": ["Ignored as improbable", "Assessed and monitored with contingency planning",
+                        "Treated as certain", "Immediately escalated as an active alert"],
+            "answer_index": 1,
+            "explanation": "Tail risks warrant contingency planning and monitoring even when unlikely — "
+                           "impact, not just probability, drives preparedness.",
+        },
+        {
+            "id": "q_second_order", "difficulty": 3,
+            "question": "'Second-order' supply-chain impact refers to:",
+            "options": ["The first report of an event", "Downstream effects propagating beyond the "
+                        "directly affected area", "A second news source", "A backup supplier"],
+            "answer_index": 1,
+            "explanation": "Second-order effects ripple through interconnected suppliers, routes and "
+                           "markets — often exceeding the immediate footprint.",
+        },
+        {
+            "id": "q_partial_warning", "difficulty": 3,
+            "question": "A government issues a *partial* (single-region) travel warning. At country "
+                        "level it is best treated as:",
+            "options": ["Do not travel anywhere in the country", "A prompt to assess that specific "
+                        "region, not the whole country", "Irrelevant", "Stronger than a full warning"],
+            "answer_index": 1,
+            "explanation": "A regional warning is specific; applying it blanket-wide over-reads the "
+                           "risk. Assess the named area against your footprint.",
+        },
+        {
+            "id": "q_source_bias", "difficulty": 3,
+            "question": "Relying only on English-language wires most directly risks:",
+            "options": ["Circular reporting", "Geographic and source bias / blind spots",
+                        "Higher confidence", "Faster velocity"],
+            "answer_index": 1,
+            "explanation": "A narrow source base introduces blind spots; diverse, regional sources "
+                           "reduce bias. The desk red-teams for exactly this.",
+        },
+        {
+            "id": "q_trend_vs_status", "difficulty": 3,
+            "question": "A story shows 'Status: contained' but 'Trend: deteriorating'. This means:",
+            "options": ["A data error", "Contained now, but the indicators are worsening",
+                        "The event is over", "It should be deleted"],
+            "answer_index": 1,
+            "explanation": "Status is the current state; trend is the direction. Contained-but-worsening "
+                           "means watch for escalation.",
+        },
+        {
+            "id": "q_staleness", "difficulty": 3,
+            "question": "An advisory re-listed on every feed poll but with unchanged content should:",
+            "options": ["Generate a new alert each poll", "Not be treated as 'new' unless it materially "
+                        "changed", "Raise its confidence", "Be removed"],
+            "answer_index": 1,
+            "explanation": "Change-detection avoids churn: only a genuine level/content change is 'new'. "
+                           "Re-listing the same advice is not an update.",
+        },
     ]
 
 
@@ -606,6 +761,164 @@ def demo_scenarios() -> list[dict]:
                  "blindspots": "Premature for a localized, contained event; risks alert fatigue and "
                                "diverts crisis resources.",
                  "better": "Escalate only if indicators (spread, injuries, route loss) deteriorate."},
+            ],
+        },
+        {
+            "id": "scn_ransomware",
+            "title": "Ransomware at a supplier",
+            "prompt": "A Tier-1 supplier reports a ransomware incident that has taken their order "
+                      "system offline. They can't confirm whether your data or delivery schedule is "
+                      "affected. Your production line has ~6 days of buffer stock. What is your first move?",
+            "principle": "Validate exposure and preserve options before committing to costly "
+                         "switches; treat unconfirmed scope as developing, not resolved.",
+            "options": [
+                {"text": "Immediately switch all orders to an alternate supplier.",
+                 "strengths": "Removes dependence on the affected supplier fast.",
+                 "blindspots": "Expensive and possibly unnecessary before scope is known; alternates "
+                               "may need qualification; burns goodwill.",
+                 "better": "Confirm impact to your specific SKUs/schedule and buffer first, in parallel "
+                           "with readying an alternate."},
+                {"text": "Ask the supplier for scope, containment status and expected recovery; check "
+                         "your own exposure and buffer coverage; ready an alternate in parallel.",
+                 "strengths": "Proportionate: establishes real exposure, uses the buffer window, keeps "
+                              "a fallback warm without premature cost.",
+                 "blindspots": "Depends on the supplier communicating honestly and promptly.",
+                 "better": "Strongest first move; set a decision deadline tied to buffer depletion."},
+                {"text": "Wait for the supplier's final incident report before doing anything.",
+                 "strengths": "Avoids overreaction.",
+                 "blindspots": "Final reports can take weeks; your 6-day buffer may lapse first.",
+                 "better": "Act on interim information against a buffer-based deadline."},
+                {"text": "Pay to expedite whatever inventory you can, immediately.",
+                 "strengths": "Builds cushion.",
+                 "blindspots": "Spends before knowing if there's a real shortfall; may not address the "
+                               "actual failure point.",
+                 "better": "Size any expedite to the validated gap, not to anxiety."},
+            ],
+        },
+        {
+            "id": "scn_port_closure",
+            "title": "Sudden port disruption on a key route",
+            "prompt": "A labour action closes a port that handles ~30% of your inbound sea freight, "
+                      "with no announced end date. Diversions to the next port add ~5 days and cost. "
+                      "How do you respond?",
+            "principle": "Match the response to route criticality and confirmed duration; avoid both "
+                         "denial and panic re-routing.",
+            "options": [
+                {"text": "Assume it resolves in a day or two and hold.",
+                 "strengths": "No wasted diversion cost if it's brief.",
+                 "blindspots": "Open-ended closures often run long; waiting erodes lead time you can't "
+                               "recover.",
+                 "better": "Set a go/no-go trigger and pre-book diversion capacity now."},
+                {"text": "Identify which shipments are time-critical, pre-book diversion/alternate-mode "
+                         "capacity for those, and set a trigger to divert the rest if closure persists.",
+                 "strengths": "Prioritises by criticality, secures scarce alternate capacity early, "
+                              "keeps a decision rule.",
+                 "blindspots": "Requires shipment-level visibility and quick carrier coordination.",
+                 "better": "Strongest move; brief customers on any at-risk commitments proactively."},
+                {"text": "Divert everything to the alternate port immediately.",
+                 "strengths": "Simple, removes exposure to the closed port.",
+                 "blindspots": "Pays the 5-day + cost penalty on non-urgent freight too; may congest "
+                               "the alternate.",
+                 "better": "Divert by priority, not wholesale."},
+                {"text": "Escalate to the executive team for a decision.",
+                 "strengths": "Ensures visibility for a material disruption.",
+                 "blindspots": "Escalation without options/recommendation slows response.",
+                 "better": "Escalate with a recommended plan and trigger, not just the problem."},
+            ],
+        },
+        {
+            "id": "scn_advisory_escalation",
+            "title": "Advisory escalates mid-trip",
+            "prompt": "Two employees are already in-country when the destination's advisory jumps from "
+                      "Level 2 to Level 3 ('reconsider travel') for the region they're in, citing rising "
+                      "unrest. They are safe and their meetings finish in 48 hours. What do you do?",
+            "principle": "Duty of care with proportionality: act on the specific change, keep the "
+                         "travellers informed, and avoid creating new risk through hasty movement.",
+            "options": [
+                {"text": "Order them to leave on the next available flight regardless of timing.",
+                 "strengths": "Maximally cautious.",
+                 "blindspots": "Rushed movement during unrest can be riskier than sheltering; may be "
+                               "disproportionate to a Level 3 (not Level 4).",
+                 "better": "Assess routes/airport access and the specific threat before mandating "
+                           "immediate departure."},
+                {"text": "Do nothing; they're safe and nearly done.",
+                 "strengths": "No disruption.",
+                 "blindspots": "Ignores a live change in official risk and duty-of-care communication.",
+                 "better": "At minimum contact them, confirm status, and review contingency options."},
+                {"text": "Contact them, confirm safety and location, review the specific regional "
+                         "warning and airport/route access, and set departure triggers.",
+                 "strengths": "Proportionate duty of care: informed, keeps options open, tied to real "
+                              "indicators.",
+                 "blindspots": "Needs a reliable comms channel and current local information.",
+                 "better": "Strongest first move; define what would trigger early extraction."},
+                {"text": "Escalate to executive crisis management immediately.",
+                 "strengths": "Leadership awareness.",
+                 "blindspots": "Premature for a Level-3, travellers-safe situation; risks alert fatigue.",
+                 "better": "Escalate if it reaches Level 4 or access deteriorates."},
+            ],
+        },
+        {
+            "id": "scn_reporting_duty",
+            "title": "A possible regulatory reporting clock",
+            "prompt": "Your security team detects a significant network intrusion at an EU operating "
+                      "entity. Under NIS2-style rules an early warning may be due within 24 hours. "
+                      "Forensics are still confirming scope. What is the priority?",
+            "principle": "Meet mandatory notification windows on time with what you know; regulatory "
+                         "duties don't wait for a complete picture.",
+            "options": [
+                {"text": "Wait until forensics fully confirm scope before notifying anyone.",
+                 "strengths": "Avoids reporting inaccuracies.",
+                 "blindspots": "Can blow the 24-hour early-warning window; late notification is itself a "
+                               "violation.",
+                 "better": "File the early warning with current known facts; update as forensics mature."},
+                {"text": "Confirm the applicable jurisdictions/entities and reporting clocks, and "
+                         "prepare an early warning with current facts while forensics continue.",
+                 "strengths": "Protects compliance timing and preserves accuracy through updates.",
+                 "blindspots": "Requires knowing which regimes apply to which entity.",
+                 "better": "Strongest move; loop in legal/compliance to own the filing."},
+                {"text": "Publicly disclose the breach immediately to be safe.",
+                 "strengths": "Maximum transparency.",
+                 "blindspots": "Premature public disclosure can be legally and operationally damaging "
+                               "and may not be what the regulation requires.",
+                 "better": "Follow the required regulator notification path first; coordinate any public "
+                           "statement with legal."},
+                {"text": "Treat it purely as a technical incident and skip compliance.",
+                 "strengths": "Faster technical response.",
+                 "blindspots": "Ignores a legal duty with real penalties; the two tracks must run "
+                               "together.",
+                 "better": "Run containment and the notification clock in parallel."},
+            ],
+        },
+        {
+            "id": "scn_flood_warehouse",
+            "title": "Flood warning near a distribution hub",
+            "prompt": "A credible 48–72h forecast warns of major flooding near your main regional "
+                      "distribution centre. It's operational now. Moving stock is costly and the "
+                      "forecast has uncertainty. What is your first move?",
+            "principle": "Use the lead time a forecast buys: stage reversible protective actions and "
+                         "define triggers rather than betting on a single outcome.",
+            "options": [
+                {"text": "Do nothing until flooding actually begins.",
+                 "strengths": "No cost if the forecast misses.",
+                 "blindspots": "Wastes the warning lead time; once water rises, options collapse.",
+                 "better": "Take low-regret protective steps now and set escalation triggers."},
+                {"text": "Fully evacuate and relocate all inventory immediately.",
+                 "strengths": "Maximally protective of stock.",
+                 "blindspots": "Expensive and disruptive against an uncertain forecast; may be "
+                               "unnecessary.",
+                 "better": "Prioritise critical/high-value and low-lying stock; stage the rest on a "
+                           "trigger."},
+                {"text": "Move critical and flood-exposed stock to safe levels, confirm drainage/"
+                         "barriers and staff safety, and set trigger levels to escalate as the forecast "
+                         "firms up.",
+                 "strengths": "Low-regret and proportionate: protects the most exposed value, keeps "
+                              "operations, scales with the forecast.",
+                 "blindspots": "Needs current forecast tracking and clear trigger ownership.",
+                 "better": "Strongest first move; pre-arrange alternate fulfilment if the DC goes down."},
+                {"text": "Escalate to executives and await instructions.",
+                 "strengths": "Leadership visibility.",
+                 "blindspots": "Consumes lead time; escalation without a plan delays protective action.",
+                 "better": "Act on low-regret steps now; escalate with a recommendation."},
             ],
         },
     ]
