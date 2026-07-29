@@ -518,6 +518,18 @@ def reference_regulations() -> list[dict]:
             "source_url": "https://eur-lex.europa.eu/eli/dir/2022/2557/oj",
         },
         {
+            "id": "reg_gdpr", "title": "GDPR (EU 2016/679) — General Data Protection Regulation",
+            "jurisdiction": "European Union", "framework": "GDPR", "status": "enforced",
+            "effective_date": "2018-05-25",
+            "affected": "Any controller or processor handling personal data of individuals in the EU/EEA, regardless of where the organisation is established.",
+            "obligations": "Lawful basis for processing, data-subject rights, privacy by design/default, records of processing (RoPA), DPIAs for high-risk processing, and a DPO where required.",
+            "reporting": "Notify the supervisory authority of a personal-data breach within 72 hours of becoming aware; inform affected individuals without undue delay when the risk is high.",
+            "penalties": "Up to €20m or 4% of total worldwide annual turnover, whichever is higher.",
+            "implications": "Align incident response to the 72h breach clock; keep processor/DPA contracts and RoPA current; underpins NIS2/DORA data handling.",
+            "prep_steps": "Maintain records of processing; define the 72h breach-notification workflow; review lawful bases and data-processing agreements.",
+            "source_url": "https://eur-lex.europa.eu/eli/reg/2016/679/oj",
+        },
+        {
             "id": "reg_csddd", "title": "CSDDD (EU 2024/1760) — Corporate Sustainability Due Diligence",
             "jurisdiction": "European Union", "framework": "CSDDD", "status": "enacted",
             "effective_date": "2027-07-26",
