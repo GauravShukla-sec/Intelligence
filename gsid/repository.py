@@ -270,7 +270,7 @@ def travel_brief(conn, code: str, data_mode: str | None = None,
         "region": region,
         "region_name": REGION_NAMES.get(region, region),
         "advisories": advisory_details,
-        "official_links": _official_advisory_links(code, name, origin),
+        "official_links": _official_advisory_links(code, name, origin, advisory_details),
         "related": related,
         "watch_items": watch,
         "recommended_actions": actions,
@@ -370,18 +370,48 @@ def _aggregate_watch(conn, stories: list[dict]) -> tuple[list[str], list[dict]]:
     return watch[:8], actions[:6]
 
 
-def _official_advisory_links(code: str, name: str, origin: str | None = None) -> list[dict]:
+def _official_advisory_links(code: str, name: str, origin: str | None = None,
+                             advisories: list[dict] | None = None) -> list[dict]:
+    """Authoritative government advisory links for a destination.
+
+    Every government that rates this destination gets a button. We prefer the
+    exact URL we ingested (known-good, per-destination) and only fall back to a
+    stable landing page — never construct a per-country URL we can't verify, so
+    we don't reintroduce dead/raw links.
+    """
     slug = name.lower().replace(" ", "-")
-    fcdo = {"name": "UK FCDO travel advice",
-            "url": f"https://www.gov.uk/foreign-travel-advice/{slug}"}
-    state = {"name": "US State Dept travel advisories",
-             "url": "https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories.html"}
-    links = [fcdo, state]
-    lead = _lead_authority(origin)
-    if lead == "state":
-        links = [state, fcdo]
-    elif lead == "fcdo":
-        links = [fcdo, state]
+    # government ISO-2 -> (button label, stable fallback landing URL)
+    GOV = {
+        "gb": ("UK FCDO travel advice",
+               f"https://www.gov.uk/foreign-travel-advice/{slug}"),
+        "us": ("US State Dept travel advisories",
+               "https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories.html"),
+        "ca": ("Global Affairs Canada advisory",
+               f"https://travel.gc.ca/destinations/{slug}"),
+        "de": ("Germany Auswärtiges Amt advice",
+               "https://www.auswaertiges-amt.de/en/ReiseUndSicherheit/reiseund"
+               "sicherheitshinweise"),
+        "au": ("Australia Smartraveller advice",
+               "https://www.smartraveller.gov.au/destinations"),
+    }
+    # Known-good per-destination URLs we actually ingested, keyed by government.
+    ingested: dict[str, str] = {}
+    for a in (advisories or []):
+        for c in a.get("citations", []):
+            gov = (c.get("source_country") or "").lower()
+            if gov in GOV and c.get("url"):
+                ingested.setdefault(gov, c["url"])
+
+    # UK + US are always offered (the baseline we track); Canada/Germany/
+    # Australia appear when they actually rate this destination.
+    order = ["gb", "us", "ca", "de", "au"]
+    if _lead_authority(origin) == "state":
+        order = ["us", "gb", "ca", "de", "au"]
+    links = []
+    for gov in order:
+        if gov in ("gb", "us") or gov in ingested:
+            label, landing = GOV[gov]
+            links.append({"name": label, "url": ingested.get(gov, landing)})
     return links
 
 

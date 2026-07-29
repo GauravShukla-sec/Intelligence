@@ -127,3 +127,47 @@ def test_level_change_on_stable_url_is_detected(conn):
     st = _state(conn, "us_state_travel")
     assert st["level"] == 3 and st["prev_level"] == 4   # delta captured
     assert _advisory_row(conn, sid)[0] == 3    # consensus recomputed
+
+
+# ---- stale internal-URL cleanup --------------------------------------------
+
+def test_cleanup_dedupes_or_rewrites_tsg_aem_citations(conn):
+    from gsid import db
+    AEM = "https://travel.state.gov/content/tsg_aem/us/en/home/x.ita.html"
+    GOOD = "https://travel.state.gov/content/travel/en/traveladvisories/x-travel-advisory.html"
+    PUBLIC = "https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories.html"
+    # Story A: has both a good citation and a stale AEM one -> AEM dropped.
+    # Story B: AEM is its only citation -> rewritten to the public index.
+    conn.execute("INSERT INTO story(id,headline,category,first_seen,last_updated) "
+                 "VALUES ('sA','A','geopolitical','t','t'),('sB','B','geopolitical','t','t')")
+    for cid, story, u in [("cA1", "sA", GOOD), ("cA2", "sA", AEM), ("cB1", "sB", AEM)]:
+        conn.execute("INSERT INTO citation(id,story_id,url) VALUES (?,?,?)", (cid, story, u))
+    conn.commit()
+
+    db._cleanup_stale_citations(conn)
+
+    assert conn.execute("SELECT COUNT(*) FROM citation WHERE url LIKE '%/tsg_aem/%'").fetchone()[0] == 0
+    a_urls = {r["url"] for r in conn.execute("SELECT url FROM citation WHERE story_id='sA'")}
+    assert a_urls == {GOOD}                                    # stale dropped, good kept
+    b_urls = {r["url"] for r in conn.execute("SELECT url FROM citation WHERE story_id='sB'")}
+    assert b_urls == {PUBLIC}                                  # orphan rewritten, not deleted
+
+
+# ---- official links ---------------------------------------------------------
+
+def test_official_links_cover_all_rating_governments():
+    from gsid.repository import _official_advisory_links
+    us_url = ("https://travel.state.gov/content/travel/en/traveladvisories/"
+              "traveladvisories/italy-travel-advisory.html")
+    advisories = [{"citations": [
+        {"source_country": "ca", "url": "https://travel.gc.ca/destinations/italy"},
+        {"source_country": "us", "url": us_url},
+    ]}]
+    links = _official_advisory_links("it", "Italy", None, advisories)
+    names = " ".join(l["name"] for l in links)
+    assert "UK FCDO" in names and "US State" in names   # baseline always present
+    assert "Canada" in names                            # rating govt added
+    assert "Germany" not in names and "Australia" not in names  # not rating Italy
+    # US link uses the known-good ingested per-country URL, not a guess.
+    us = next(l for l in links if "US State" in l["name"])
+    assert us["url"] == us_url

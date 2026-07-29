@@ -32,3 +32,9 @@ def test_url_validation():
     assert not is_valid_url("ftp://example.org")
     assert not is_valid_url("not a url")
     assert not is_valid_url("")
+    # Internal CMS render path (travel.state.gov Adobe AEM) is not a public page.
+    assert not is_valid_url(
+        "https://travel.state.gov/content/tsg_aem/us/en/home/x.html")
+    assert is_valid_url(
+        "https://travel.state.gov/content/travel/en/traveladvisories/"
+        "traveladvisories/italy-travel-advisory.html")

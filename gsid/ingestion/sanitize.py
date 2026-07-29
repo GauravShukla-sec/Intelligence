@@ -74,4 +74,8 @@ def is_valid_url(url: str) -> bool:
         return False
     if not p.netloc or "." not in p.netloc:
         return False
+    # Internal CMS render paths (e.g. travel.state.gov's Adobe AEM `/tsg_aem/`)
+    # return a raw HTML fragment, not a public page — never cite them.
+    if "/tsg_aem/" in p.path:
+        return False
     return True

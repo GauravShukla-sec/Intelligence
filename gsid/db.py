@@ -40,8 +40,34 @@ def init_db(conn: sqlite3.Connection) -> None:
     """Create tables (idempotent) and seed reference data."""
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
     _migrate(conn)
+    _cleanup_stale_citations(conn)
     _seed_reference(conn)
     conn.commit()
+
+
+def _cleanup_stale_citations(conn: sqlite3.Connection) -> None:
+    """Remove internal Adobe AEM (`/tsg_aem/`) travel.state.gov citations left
+    by an earlier ingestion — they open a raw HTML fragment, not a public page.
+
+    Idempotent: drop the stale citation where the story already has a good one
+    (deduping); for the rare story whose only citation is a tsg_aem link,
+    rewrite it to the public advisories index so the link still works.
+    """
+    PUBLIC = ("https://travel.state.gov/content/travel/en/"
+              "traveladvisories/traveladvisories.html")
+    rows = conn.execute(
+        "SELECT id, story_id FROM citation WHERE url LIKE '%/tsg_aem/%'"
+    ).fetchall()
+    for r in rows:
+        has_good = conn.execute(
+            "SELECT 1 FROM citation WHERE story_id=? AND id<>? "
+            "AND url NOT LIKE '%/tsg_aem/%' LIMIT 1",
+            (r["story_id"], r["id"]),
+        ).fetchone()
+        if has_good:
+            conn.execute("DELETE FROM citation WHERE id=?", (r["id"],))
+        else:
+            conn.execute("UPDATE citation SET url=? WHERE id=?", (PUBLIC, r["id"]))
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
