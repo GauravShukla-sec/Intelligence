@@ -198,6 +198,21 @@ def mentioned_countries(text: str | None, limit: int = 8) -> list[str]:
     return found
 
 
+def subject_countries(headline: str | None, body: str | None = "",
+                      limit: int = 8) -> list[str]:
+    """Countries a story is ABOUT.
+
+    A country named in the HEADLINE is a strong aboutness signal; a single
+    passing mention in the body of a multi-topic roundup (e.g. a weekly
+    briefing) is not. So we tag from the headline, and only fall back to the
+    body when the headline names no country at all.
+    """
+    head = mentioned_countries(headline, limit)
+    if head:
+        return head
+    return mentioned_countries(body, limit)
+
+
 def resolve_country(text: str | None) -> str | None:
     """Best-effort map a country name / FCDO URL slug to an ISO alpha-2 code."""
     if not text:

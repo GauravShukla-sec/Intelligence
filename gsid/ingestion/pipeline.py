@@ -15,7 +15,7 @@ from .connectors import make_connector, selected_feeds, FeedItem
 from .dedup import cluster_items, detect_circular
 from .sanitize import clean_content, is_valid_url
 from ..store import DraftClaim, DraftSource, StoryDraft, save_story
-from ..taxonomy import CATEGORY_IDS, country_name, mentioned_countries, resolve_country
+from ..taxonomy import CATEGORY_IDS, country_name, resolve_country, subject_countries
 from ..db import utcnow
 
 log = logging.getLogger("gsid.pipeline")
@@ -183,10 +183,10 @@ class IngestionPipeline:
             countries = [dest_code]
         else:
             headline = lead.title
-            # Geo-tag to the countries the story is ABOUT (from its text), not
-            # to its publisher — so the map and country filters reflect where
-            # events happen. Lead mention becomes the primary country.
-            countries = mentioned_countries(f"{lead.title} {body}")
+            # Geo-tag to the countries the story is ABOUT (headline first, so a
+            # roundup's passing body mentions don't leak), not to its publisher —
+            # so the map and country filters reflect where events happen.
+            countries = subject_countries(lead.title, body)
             primary_country = countries[0] if countries else ""
 
         return StoryDraft(

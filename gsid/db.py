@@ -55,17 +55,20 @@ def _backfill_country_tags(conn: sqlite3.Connection) -> None:
     region to the lead subject. Advisories are left untouched (their country IS
     the destination). Idempotent: guarded by a one-shot preference marker.
     """
-    from .taxonomy import mentioned_countries, region_for_country
+    from .taxonomy import region_for_country, subject_countries
 
+    # v2: headline-first tagging (v1 over-tagged roundups from passing body
+    # mentions). Bumping the marker re-runs the corrected pass on deployments
+    # that already applied v1.
     marker = conn.execute(
-        "SELECT 1 FROM preference WHERE key='country_retag_v1'").fetchone()
+        "SELECT 1 FROM preference WHERE key='country_retag_v2'").fetchone()
     if marker:
         return
     rows = conn.execute(
         "SELECT id, headline, summary FROM story "
         "WHERE (status IS NULL OR status != 'advisory')").fetchall()
     for r in rows:
-        codes = mentioned_countries(f"{r['headline'] or ''} {r['summary'] or ''}")
+        codes = subject_countries(r["headline"] or "", r["summary"] or "")
         if not codes:
             continue  # leave stories with no detectable subject as-is
         conn.execute("DELETE FROM story_country WHERE story_id=?", (r["id"],))
@@ -77,7 +80,7 @@ def _backfill_country_tags(conn: sqlite3.Connection) -> None:
             "UPDATE story SET primary_country=?, primary_region=? WHERE id=?",
             (codes[0], region_for_country(codes[0]), r["id"]))
     conn.execute(
-        "INSERT OR REPLACE INTO preference(key, value) VALUES ('country_retag_v1','done')")
+        "INSERT OR REPLACE INTO preference(key, value) VALUES ('country_retag_v2','done')")
 
 
 def _cleanup_stale_citations(conn: sqlite3.Connection) -> None:

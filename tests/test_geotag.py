@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from gsid import db
-from gsid.taxonomy import mentioned_countries
+from gsid.taxonomy import mentioned_countries, subject_countries
 
 
 def test_extracts_subject_countries():
@@ -30,6 +30,16 @@ def test_empty_and_none():
     assert mentioned_countries(None) == []
 
 
+def test_subject_countries_prefers_headline_over_roundup_body():
+    # A roundup about India that name-drops Iran/Spain in the body must NOT be
+    # tagged to Iran — the headline decides aboutness.
+    head = "Monday briefing: How the Cockroach protests exposed cracks in India's government"
+    body = "Elsewhere: strikes near Iran; markets in Spain; France reacts."
+    assert subject_countries(head, body) == ["in"]
+    # When the headline names no country, fall back to the body.
+    assert set(subject_countries("Middle East crisis deepens", "Iran and Israel trade fire")) == {"ir", "il"}
+
+
 def test_backfill_retags_and_is_idempotent(conn):
     # A story mis-tagged to its publisher (gb) but clearly about Iran/Yemen.
     conn.execute(
@@ -39,7 +49,7 @@ def test_backfill_retags_and_is_idempotent(conn):
         "'geopolitical','gb','europe','t','t','developing')")
     conn.execute("INSERT INTO story_country(story_id,country) VALUES ('s_ir','gb')")
     # Clear the one-shot marker so the backfill runs on this test DB.
-    conn.execute("DELETE FROM preference WHERE key='country_retag_v1'")
+    conn.execute("DELETE FROM preference WHERE key='country_retag_v2'")
     conn.commit()
 
     db._backfill_country_tags(conn)
@@ -52,7 +62,7 @@ def test_backfill_retags_and_is_idempotent(conn):
     assert prim == "us"  # lead subject
 
     # Idempotent: marker set, a second run is a no-op.
-    assert conn.execute("SELECT 1 FROM preference WHERE key='country_retag_v1'").fetchone()
+    assert conn.execute("SELECT 1 FROM preference WHERE key='country_retag_v2'").fetchone()
     db._backfill_country_tags(conn)
     assert {r["country"] for r in conn.execute(
         "SELECT country FROM story_country WHERE story_id='s_ir'")} == tagged
@@ -65,7 +75,7 @@ def test_advisory_stories_left_untouched(conn):
         "('s_adv','Travel advisory: France','FCDO advises against travel to Iran regions.',"
         "'geopolitical','fr','t','t','advisory')")
     conn.execute("INSERT INTO story_country(story_id,country) VALUES ('s_adv','fr')")
-    conn.execute("DELETE FROM preference WHERE key='country_retag_v1'")
+    conn.execute("DELETE FROM preference WHERE key='country_retag_v2'")
     conn.commit()
 
     db._backfill_country_tags(conn)
