@@ -129,6 +129,34 @@
     return h("div", null, rows);
   }
 
+  // Advisory levels reuse the severity palette: 4→critical … 1→low.
+  const ADV_SEV = { 4: "sev-critical", 3: "sev-high", 2: "sev-moderate", 1: "sev-low" };
+  const ADV_ICON = { 4: "⛔", 3: "⚠", 2: "◑", 1: "■" };
+
+  function advisoryConsensus(adv) {
+    if (!adv || !adv.consensus) return null;
+    const govChips = (adv.sources || []).map((s) =>
+      chip((s.gov_name || (s.gov || "").toUpperCase()) + " · L" + s.level,
+        ADV_SEV[s.level] || "", ADV_ICON[s.level] || "•"));
+    return h("div", { class: "panel", style: "margin-bottom:1rem" }, [
+      h("div", { class: "sc-top" }, [
+        h("h2", null, "Cross-government advisory level"),
+        chip("Consensus: Level " + adv.consensus, ADV_SEV[adv.consensus] || "",
+          ADV_ICON[adv.consensus] || "•"),
+      ]),
+      h("p", { class: "sd-reason" },
+        "Worst-case across governments that rate this destination — a stricter "
+        + "advisory is never hidden behind a milder one. "
+        + adv.consensus_label + "."),
+      h("div", { class: "detail-ratings" }, govChips),
+      adv.diverges ? h("p", { class: "sd-reason" },
+        chip("Governments differ", "sev-high", "⚠"),
+        " Assessments span levels " + adv.lowest + "–" + adv.consensus
+        + "; treat the range as a signal and check the leading government for your travellers.")
+        : null,
+    ]);
+  }
+
   function cleanHeadline(t) { return (t || "").replace("[DEMO] ", ""); }
   function truncate(t, n) { t = t || ""; return t.length > n ? t.slice(0, n).trim() + "…" : t; }
 
@@ -146,7 +174,8 @@
 
   window.GSID_C = {
     h, chip, impactChip, confChip, urgencyChip, trendChip, ratingChips, scoreRing,
-    storyCard, scoreBars, ratingRationale, cleanHeadline, truncate, loading, empty, toast,
+    storyCard, scoreBars, ratingRationale, advisoryConsensus, cleanHeadline, truncate,
+    loading, empty, toast,
     IMPACT_ICON,
   };
 })();

@@ -477,6 +477,10 @@
         h("h2", null, "Rating rationale"), C.ratingRationale(s.scoring),
       ]));
 
+      // Cross-government advisory consensus (Layer 2), advisory stories only
+      const advPanel = C.advisoryConsensus(s.advisory);
+      if (advPanel) { advPanel.style.marginTop = "1rem"; right.appendChild(advPanel); }
+
       // Potentially affected
       const pa = a.potentially_affected || {};
       right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
@@ -1058,6 +1062,12 @@
         h("p", null, tv.note),
         tv.entry_note ? h("p", { class: "sd-reason" }, "Entry & visa: " + tv.entry_note) : null,
       ]));
+
+      // cross-government advisory consensus (Layer 2) — worst-case + divergence
+      (tb.advisories || []).forEach((a) => {
+        const panel = C.advisoryConsensus(a.advisory);
+        if (panel) wrap.appendChild(panel);
+      });
 
       // official advisory records
       if (tb.advisories.length) {

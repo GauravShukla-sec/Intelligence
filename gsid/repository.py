@@ -38,6 +38,7 @@ def _story_row_to_summary(row) -> dict[str, Any]:
         "trend": row["trend"],
         "is_alert": bool(row["is_alert"]),
         "is_demo": bool(row["is_demo"]),
+        "advisory_level": row["advisory_level"] if "advisory_level" in row.keys() else 0,
     }
 
 
@@ -116,6 +117,9 @@ def get_story(conn, story_id: str) -> dict | None:
     story = _story_row_to_summary(row)
     story["analysis"] = json.loads(row["analysis_json"]) if row["analysis_json"] else {}
     story["scoring"] = json.loads(row["scoring_json"]) if row["scoring_json"] else {}
+    story["advisory"] = (json.loads(row["advisory_json"])
+                         if ("advisory_json" in row.keys() and row["advisory_json"])
+                         else None)
 
     story["countries"] = [
         r["country"] for r in conn.execute(
@@ -153,7 +157,8 @@ def _claims(conn, story_id: str) -> list[dict]:
 def _citations(conn, story_id: str) -> list[dict]:
     rows = conn.execute(
         "SELECT ct.title, ct.url, ct.published_at, ct.accessed_at, ct.orig_language, "
-        "ct.orig_headline, ct.is_primary, ct.is_circular, s.name AS source_name, "
+        "ct.orig_headline, ct.is_primary, ct.is_circular, ct.advisory_level, "
+        "s.name AS source_name, "
         "s.tier AS source_tier, s.source_type, s.country AS source_country, "
         "s.ownership, s.transparency FROM citation ct "
         "LEFT JOIN source s ON ct.source_id=s.id WHERE ct.story_id=? "
@@ -317,6 +322,7 @@ def _attach_advisory_detail(conn, s: dict, origin: str | None = None) -> dict:
     full = get_story(conn, s["id"]) or s
     s = dict(s)
     s["summary"] = full.get("summary", s.get("summary"))
+    s["advisory"] = full.get("advisory")  # cross-government consensus (Layer 2)
     citations = full.get("citations", [])
     lead = _lead_authority(origin)
     if lead:

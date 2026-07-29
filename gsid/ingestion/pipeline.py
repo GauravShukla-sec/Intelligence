@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 
+from .advisory_levels import level_from_text
 from .connectors import make_connector, selected_feeds, FeedItem
 from .dedup import cluster_items, detect_circular
 from .sanitize import clean_content, is_valid_url
@@ -64,13 +65,21 @@ class IngestionPipeline:
         # Pre-filter for security relevance (keeps the desk focused).
         relevant = [it for it in all_items if _looks_relevant(it)]
 
-        # Cluster near-duplicate coverage across all feeds.
-        texts = [f"{it.title} {it.summary}" for it in relevant]
-        clusters = cluster_items(texts, threshold=0.5) if texts else []
+        # News is clustered by text similarity to fuse near-duplicate coverage.
+        # Travel advisories are NOT: their boilerplate wording is near-identical
+        # across destinations, so text clustering would wrongly fuse unrelated
+        # countries. Each advisory stands alone and is grouped by DESTINATION at
+        # save time (dedup_key = "Travel advisory: <country>"), which is how one
+        # story ends up with one citation per government.
+        news = [it for it in relevant if not it.is_travel_advisory]
+        advisories = [it for it in relevant if it.is_travel_advisory]
+        news_texts = [f"{it.title} {it.summary}" for it in news]
+        clusters = cluster_items(news_texts, threshold=0.5) if news_texts else []
+        member_groups = [[news[i] for i in idx] for idx in clusters]
+        member_groups += [[it] for it in advisories]
 
         saved = 0
-        for member_idx in clusters:
-            members = [relevant[i] for i in member_idx]
+        for members in member_groups:
             draft = self._build_draft(members)
             if draft is None:
                 continue
@@ -84,7 +93,7 @@ class IngestionPipeline:
             "feeds_polled": len(feeds),
             "items_fetched": len(all_items),
             "items_relevant": len(relevant),
-            "clusters": len(clusters),
+            "clusters": len(member_groups),
             "stories_saved": saved,
             "feed_status": feed_status,
         }
@@ -143,12 +152,19 @@ class IngestionPipeline:
         for m in members:
             if not is_valid_url(m.link):
                 continue
+            # Normalize this government's advisory to the shared 1..4 scale:
+            # JSON connectors set it directly; free-text feeds are parsed here.
+            level = m.advisory_level or (
+                level_from_text(m.source_id, m.title, m.summary)
+                if m.is_travel_advisory else 0
+            )
             sources.append(DraftSource(
                 name=m.source_name, url=m.link, tier=m.tier,
                 source_type=m.source_type, country=m.country, language=m.language,
                 is_primary=(m.tier == 1), title=m.title, published_at=m.published_at,
                 orig_headline=m.title if m.language != "en" else "",
                 orig_language=m.language, is_circular=circular,
+                advisory_level=level, feed_id=m.source_id,
             ))
         if not sources:
             return None

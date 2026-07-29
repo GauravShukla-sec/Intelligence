@@ -39,8 +39,33 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     """Create tables (idempotent) and seed reference data."""
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    _migrate(conn)
     _seed_reference(conn)
     conn.commit()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Apply additive column migrations to pre-existing tables.
+
+    `CREATE TABLE IF NOT EXISTS` never alters an existing table, so columns
+    added to schema.sql after a DB was first created must be back-filled here.
+    Each ADD COLUMN is idempotent (guarded by a PRAGMA table_info check).
+    """
+    additions = {
+        "story": [
+            ("advisory_level", "INTEGER NOT NULL DEFAULT 0"),
+            ("advisory_json", "TEXT"),
+        ],
+        "citation": [
+            ("advisory_level", "INTEGER NOT NULL DEFAULT 0"),
+        ],
+    }
+    for table, cols in additions.items():
+        existing = {r["name"] for r in
+                    conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        for name, decl in cols:
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
 
 
 def _seed_reference(conn: sqlite3.Connection) -> None:

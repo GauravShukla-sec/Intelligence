@@ -61,6 +61,7 @@ class FeedItem:
     category_hint: str
     is_travel_advisory: bool = False
     subject_country: str = ""   # authoritative ISO of the advisory's DESTINATION
+    advisory_level: int = 0     # normalized 1..4 (0 = n/a; see advisory_levels)
 
 
 @dataclass
@@ -352,7 +353,8 @@ class _JsonAdvisoryConnector:
             return FetchResult(items, "empty", "no elevated advisories parsed", http_status)
         return FetchResult(items, "ok", "", http_status)
 
-    def _make_item(self, *, title, link, summary, published_at, subject_country) -> FeedItem:
+    def _make_item(self, *, title, link, summary, published_at, subject_country,
+                   advisory_level=0) -> FeedItem:
         return FeedItem(
             title=title, link=link, summary=summary, published_at=published_at,
             source_id=self.feed.id, source_name=self.feed.name, tier=self.feed.tier,
@@ -360,6 +362,7 @@ class _JsonAdvisoryConnector:
             language=self.feed.language, region_hint=self.feed.region_hint,
             category_hint=self.feed.category_hint, is_travel_advisory=True,
             subject_country=(subject_country or "").strip().lower(),
+            advisory_level=advisory_level,
         )
 
     def _items(self, payload: dict) -> list[FeedItem]:  # pragma: no cover
@@ -406,6 +409,8 @@ class CanadaAdvisoryConnector(_JsonAdvisoryConnector):
                 summary=summary,
                 published_at=_epoch_to_utc_iso((entry.get("date-published") or {}).get("timestamp")),
                 subject_country=entry.get("country-iso"),
+                # Canada advisory-state is 0-indexed (0..3 => GSID levels 1..4).
+                advisory_level=state + 1,
             ))
         return items
 
@@ -421,12 +426,12 @@ class GermanyAdvisoryConnector(_JsonAdvisoryConnector):
     renders an English destination headline.
     """
 
-    # (flag field, English label) in priority order, strongest first.
+    # (flag field, English label, GSID level) in priority order, strongest first.
     _LABELS = [
-        ("warning", "Travel warning (avoid travel)"),
-        ("partialWarning", "Partial travel warning"),
-        ("situationWarning", "Situation-based travel warning"),
-        ("situationPartWarning", "Partial situation-based travel warning"),
+        ("warning", "Travel warning (avoid travel)", 4),
+        ("partialWarning", "Partial travel warning", 3),
+        ("situationWarning", "Situation-based travel warning", 2),
+        ("situationPartWarning", "Partial situation-based travel warning", 2),
     ]
 
     def _items(self, payload: dict) -> list[FeedItem]:
@@ -435,9 +440,11 @@ class GermanyAdvisoryConnector(_JsonAdvisoryConnector):
         for content_id, entry in resp.items():
             if not isinstance(entry, dict) or "iso3CountryCode" not in entry:
                 continue  # skips the scalar 'lastModified' and any stray keys
-            label = next((lbl for f, lbl in self._LABELS if _flag(entry.get(f))), "")
-            if not label:
+            match = next(((lbl, lvl) for f, lbl, lvl in self._LABELS
+                          if _flag(entry.get(f))), None)
+            if match is None:
                 continue  # baseline safety notice, not an elevated warning
+            label, level = match
             name = (entry.get("countryName") or "").strip()
             if not name:
                 continue
@@ -447,6 +454,7 @@ class GermanyAdvisoryConnector(_JsonAdvisoryConnector):
                 summary=f"{entry.get('title', name)} · {label}",
                 published_at=_epoch_to_utc_iso(entry.get("lastModified") or entry.get("effective")),
                 subject_country=entry.get("countryCode"),
+                advisory_level=level,
             ))
         return items
 

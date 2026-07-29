@@ -8,12 +8,14 @@ and live data structurally identical and guarantees claim→source traceability.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from . import db
+from .ingestion.advisory_levels import LEVEL_LABELS
 from .analysis import AnalysisInput, AnalyzerProtocol
 from .analysis.base import SourceRef
 from .scoring import (
@@ -46,6 +48,8 @@ class DraftSource:
     is_circular: bool = False
     ownership: str = ""
     transparency: str = ""
+    advisory_level: int = 0   # this government's normalized 1..4 (0 = n/a)
+    feed_id: str = ""         # ingestion feed id (advisory change-detection key)
 
 
 @dataclass
@@ -198,11 +202,12 @@ def save_story(conn, draft: StoryDraft, analyzer: AnalyzerProtocol,
         src_ids.append(src_id)
         conn.execute(
             "INSERT INTO citation(id,story_id,claim_id,source_id,title,url,"
-            "published_at,accessed_at,orig_language,orig_headline,is_primary,is_circular)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "published_at,accessed_at,orig_language,orig_headline,is_primary,"
+            "is_circular,advisory_level)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (db.new_id("cit_"), sid, None, src_id, s.title or draft.headline, s.url,
              s.published_at, now, s.orig_language, s.orig_headline,
-             1 if s.is_primary else 0, 1 if s.is_circular else 0),
+             1 if s.is_primary else 0, 1 if s.is_circular else 0, s.advisory_level),
         )
 
     for cl in draft.claims:
@@ -244,6 +249,12 @@ def save_story(conn, draft: StoryDraft, analyzer: AnalyzerProtocol,
              now),
         )
 
+    # travel-advisory consensus + change-detection baseline
+    if draft.status == "advisory":
+        if primary_country:
+            _track_advisory_changes(conn, primary_country, draft.sources)
+        _recompute_advisory(conn, sid)
+
     db.reindex_story_fts(conn, sid)
     db.audit(conn, actor if ":" in actor else f"ai:{ai.provider}", "analyze_story",
              "story", sid, {"score": breakdown.total, "confidence": confidence})
@@ -275,33 +286,152 @@ def _persist_analysis_rows(conn, sid: str, ai) -> None:
 
 
 def _merge_into_existing(conn, story_id: str, draft: StoryDraft, actor: str) -> str:
-    """Freshness update path: bump last_updated, append any new citation."""
+    """Freshness/update path for a re-ingested draft.
+
+    Appends genuinely new citations, and — for travel advisories — catches a
+    changed advisory LEVEL on an unchanged URL (invisible to a URL-only check),
+    recomputes the cross-government consensus, and only bumps last_updated when
+    something materially changed (so feeds that re-list every country each run
+    don't churn).
+    """
     now = db.utcnow()
     changed = False
     for s in draft.sources:
         if not s.url or not is_valid_url(s.url):
             continue
         dup = conn.execute(
-            "SELECT id FROM citation WHERE story_id=? AND url=?", (story_id, s.url)
+            "SELECT id, advisory_level FROM citation WHERE story_id=? AND url=?",
+            (story_id, s.url),
         ).fetchone()
         if dup:
+            # Same source URL — but this government's level may have moved.
+            if s.advisory_level and dup["advisory_level"] != s.advisory_level:
+                conn.execute(
+                    "UPDATE citation SET advisory_level=?, title=?, published_at=? "
+                    "WHERE id=?",
+                    (s.advisory_level, s.title or draft.headline, s.published_at,
+                     dup["id"]),
+                )
+                changed = True
             continue
         src_id = _ensure_source(conn, s)
         conn.execute(
             "INSERT INTO citation(id,story_id,claim_id,source_id,title,url,"
-            "published_at,accessed_at,orig_language,orig_headline,is_primary,is_circular)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "published_at,accessed_at,orig_language,orig_headline,is_primary,"
+            "is_circular,advisory_level)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (db.new_id("cit_"), story_id, None, src_id, s.title or draft.headline,
              s.url, s.published_at, now, s.orig_language, s.orig_headline,
-             1 if s.is_primary else 0, 1 if s.is_circular else 0),
+             1 if s.is_primary else 0, 1 if s.is_circular else 0, s.advisory_level),
         )
         changed = True
+
+    if draft.status == "advisory" and draft.primary_country:
+        # advisory_state always advances last_seen; reports material moves.
+        if _track_advisory_changes(conn, draft.primary_country, draft.sources):
+            changed = True
+
     if changed:
+        if draft.status == "advisory":
+            _recompute_advisory(conn, story_id)
         conn.execute("UPDATE story SET last_updated=? WHERE id=?", (now, story_id))
         db.audit(conn, actor, "merge_citation", "story", story_id,
-                 "appended new corroborating source(s)")
-        conn.commit()
+                 "advisory level/citation change detected" if draft.status == "advisory"
+                 else "appended new corroborating source(s)")
+    conn.commit()  # persist advisory_state last_seen even on a no-op run
     return story_id
+
+
+# --------------------------------------------------------------------------
+# Travel-advisory consensus (Layer 2) + change-detection (Layer 3)
+# --------------------------------------------------------------------------
+_GOV_NAMES = {
+    "us": "US State Dept", "gb": "UK FCDO", "ca": "Global Affairs Canada",
+    "de": "German Federal Foreign Office", "au": "Australia Smartraveller",
+}
+
+
+def _recompute_advisory(conn, story_id: str) -> None:
+    """Aggregate every government's normalized level on a destination story.
+
+    consensus = worst case (max) so a 'do not travel' is never hidden; the
+    spread between the strongest and mildest reading is surfaced as a
+    divergence signal. Result is written to story.advisory_level/advisory_json.
+    """
+    rows = conn.execute(
+        "SELECT ct.advisory_level AS level, s.country AS gov, s.name AS gov_name "
+        "FROM citation ct LEFT JOIN source s ON ct.source_id=s.id "
+        "WHERE ct.story_id=? AND ct.advisory_level > 0",
+        (story_id,),
+    ).fetchall()
+    if not rows:
+        conn.execute("UPDATE story SET advisory_level=0, advisory_json=NULL WHERE id=?",
+                     (story_id,))
+        return
+    # One reading per government (highest, if a government appears twice).
+    best: dict[str, tuple[int, str]] = {}
+    for r in rows:
+        gov = (r["gov"] or "").lower()
+        if gov not in best or r["level"] > best[gov][0]:
+            best[gov] = (r["level"], r["gov_name"])
+    levels = [lvl for lvl, _ in best.values()]
+    consensus, lowest = max(levels), min(levels)
+    by_source = sorted(
+        ({"gov": gov, "gov_name": _GOV_NAMES.get(gov) or name,
+          "level": lvl, "label": LEVEL_LABELS.get(lvl, "")}
+         for gov, (lvl, name) in best.items()),
+        key=lambda x: (-x["level"], x["gov_name"]),
+    )
+    payload = {
+        "consensus": consensus, "consensus_label": LEVEL_LABELS.get(consensus, ""),
+        "lowest": lowest, "spread": consensus - lowest,
+        "diverges": (consensus - lowest) >= 2, "sources": by_source,
+    }
+    conn.execute("UPDATE story SET advisory_level=?, advisory_json=? WHERE id=?",
+                 (consensus, json.dumps(payload), story_id))
+
+
+def _track_advisory_changes(conn, dest_country: str, sources: list[DraftSource]) -> bool:
+    """Upsert per-(feed, destination) advisory state; return True if any moved.
+
+    A "material" move is a first sighting, a level change, or a content-hash
+    change — the signal for "this advisory changed today" that a stable URL
+    would otherwise hide. last_seen advances every run regardless.
+    """
+    now = db.utcnow()
+    dest = (dest_country or "").strip().lower()
+    moved = False
+    for s in sources:
+        if not s.feed_id or s.advisory_level <= 0:
+            continue
+        content_hash = hashlib.sha1(
+            f"{s.advisory_level}|{(s.title or '').strip()}".encode("utf-8")
+        ).hexdigest()
+        prior = conn.execute(
+            "SELECT level, content_hash FROM advisory_state "
+            "WHERE feed_id=? AND dest_country=?", (s.feed_id, dest),
+        ).fetchone()
+        material = (prior is None or prior["level"] != s.advisory_level
+                    or prior["content_hash"] != content_hash)
+        if prior is None:
+            conn.execute(
+                "INSERT INTO advisory_state(feed_id,dest_country,level,prev_level,"
+                "content_hash,last_modified,changed_at,last_seen) VALUES (?,?,?,?,?,?,?,?)",
+                (s.feed_id, dest, s.advisory_level, 0, content_hash,
+                 s.published_at, now, now),
+            )
+        else:
+            conn.execute(
+                "UPDATE advisory_state SET "
+                "prev_level = CASE WHEN ? THEN level ELSE prev_level END, "
+                "level=?, content_hash=?, last_modified=?, "
+                "changed_at = CASE WHEN ? THEN ? ELSE changed_at END, last_seen=? "
+                "WHERE feed_id=? AND dest_country=?",
+                (1 if material else 0, s.advisory_level, content_hash, s.published_at,
+                 1 if material else 0, now, now, s.feed_id, dest),
+            )
+        moved = moved or material
+    return moved
 
 
 def _normalize_countries(draft: StoryDraft) -> list[str]:

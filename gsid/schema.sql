@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS story (
     is_demo           INTEGER NOT NULL DEFAULT 0,
     dedup_key         TEXT,                 -- normalized clustering key
 
+    -- Travel-advisory consensus (normalized 1..4 across governments; 0 = n/a)
+    advisory_level    INTEGER NOT NULL DEFAULT 0,  -- worst-case level across sources
+    advisory_json     TEXT,                 -- {consensus,lowest,spread,diverges,sources[]}
+
     analysis_json     TEXT,                 -- structured AI/heuristic analysis blob
     scoring_json      TEXT                  -- per-dimension score breakdown + rationale
 );
@@ -116,7 +120,8 @@ CREATE TABLE IF NOT EXISTS citation (
     orig_language TEXT DEFAULT 'en',
     orig_headline TEXT,                 -- retained for multilingual sources
     is_primary    INTEGER NOT NULL DEFAULT 0,
-    is_circular   INTEGER NOT NULL DEFAULT 0   -- flagged as circular/syndicated
+    is_circular   INTEGER NOT NULL DEFAULT 0,  -- flagged as circular/syndicated
+    advisory_level INTEGER NOT NULL DEFAULT 0  -- this govt's normalized 1..4 (0 = n/a)
 );
 CREATE INDEX IF NOT EXISTS idx_citation_story ON citation(story_id);
 
@@ -272,6 +277,21 @@ CREATE TABLE IF NOT EXISTS feed_health (
     status       TEXT,      -- ok | empty | error
     error        TEXT,
     consecutive_failures INTEGER NOT NULL DEFAULT 0
+);
+
+-- Advisory change-detection state (one row per government feed + destination)-
+-- Lets ingestion catch a level/content change even when the advisory URL is
+-- unchanged, and skip no-op churn from feeds that re-list every country.
+CREATE TABLE IF NOT EXISTS advisory_state (
+    feed_id       TEXT NOT NULL,      -- ingestion feed id (e.g. ca_gac_travel)
+    dest_country  TEXT NOT NULL,      -- ISO-2 destination the advice is about
+    level         INTEGER NOT NULL DEFAULT 0,   -- current normalized 1..4
+    prev_level    INTEGER NOT NULL DEFAULT 0,   -- level before the last change
+    content_hash  TEXT,               -- hash of level+text, for change detection
+    last_modified TEXT,               -- source-provided publication time (UTC ISO)
+    changed_at    TEXT,               -- when we last detected a material change
+    last_seen     TEXT,               -- last run this advisory was observed
+    PRIMARY KEY (feed_id, dest_country)
 );
 
 -- Full-text search over stories (standalone FTS, populated in code) --------
