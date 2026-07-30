@@ -7,6 +7,17 @@
   <meta name="description" content="Corporate global-security intelligence desk: verified, scored, and connected to security work." />
   <link rel="preconnect" href="/" />
   <link rel="stylesheet" href="/static/css/styles.css" />
+
+  <!-- Installable web app (PWA): home-screen icon, standalone window, offline -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#05080f" />
+  <link rel="icon" href="/static/icons/favicon-64.png" type="image/png" />
+  <!-- iOS ignores the manifest icon/display; these are its equivalents -->
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="GSID" />
+  <meta name="mobile-web-app-capable" content="yes" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -89,5 +100,27 @@
   <script src="/static/js/map.js"></script>
   <script src="/static/js/views.js"></script>
   <script src="/static/js/app.js"></script>
+
+  <!-- Register the service worker (offline + installable). Progressive: if the
+       browser lacks support, or registration fails, the app works as before. -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("/sw.js").then(function (reg) {
+          // A new version is waiting: activate it so the next load is current.
+          if (reg.waiting) reg.waiting.postMessage("skipWaiting");
+          reg.addEventListener("updatefound", function () {
+            var sw = reg.installing;
+            if (!sw) return;
+            sw.addEventListener("statechange", function () {
+              if (sw.state === "installed" && navigator.serviceWorker.controller) {
+                sw.postMessage("skipWaiting");
+              }
+            });
+          });
+        }).catch(function () { /* offline support is optional */ });
+      });
+    }
+  </script>
 </body>
 </html>

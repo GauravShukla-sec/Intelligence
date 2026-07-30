@@ -168,6 +168,28 @@ def create_app(config: Config | None = None) -> Flask:
     def static_files(filename):
         return send_from_directory(_web_path(app, "static"), filename)
 
+    # ---- PWA (installable + offline) --------------------------------------
+    # Both must be served from the ROOT path: a service worker can only control
+    # pages at or below its own URL, so /sw.js is required for app-wide scope.
+    @app.route("/sw.js")
+    def service_worker():
+        res = send_from_directory(_web_path(app), "sw.js",
+                                  mimetype="application/javascript")
+        # Never let the HTTP cache pin an old worker, or clients stop updating.
+        res.headers["Cache-Control"] = "no-cache, max-age=0"
+        res.headers["Service-Worker-Allowed"] = "/"
+        return res
+
+    @app.route("/manifest.webmanifest")
+    def manifest():
+        return send_from_directory(_web_path(app), "manifest.webmanifest",
+                                   mimetype="application/manifest+json")
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return send_from_directory(_web_path(app, "static", "icons"),
+                                   "favicon-64.png", mimetype="image/png")
+
     # ======================================================================
     # Meta
     # ======================================================================
