@@ -46,6 +46,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _cleanup_stale_citations(conn)
     _backfill_country_tags(conn)
     _retag_advisories(conn)
+    _requalify_alerts(conn)
     _seed_reference(conn)
     conn.commit()
 
@@ -133,6 +134,39 @@ def _retag_advisories(conn: sqlite3.Connection) -> int:
         "INSERT OR REPLACE INTO preference(key, value) VALUES ('advisory_retag_v1','done')")
     if changed:
         log.info("re-tagged %d travel advisories to their destination", changed)
+    return changed
+
+
+def _requalify_alerts(conn: sqlite3.Connection) -> int:
+    """Re-apply the alert gate to stories scored under an older, looser rule.
+
+    Without this, previously-flagged stories keep is_alert=1 forever — the live
+    Critical Alerts page stays full of Level-2 travel advisories and stale
+    events. Recomputed from columns already on the row, so no re-analysis is
+    needed. Runs whenever the rule version changes.
+    """
+    from .scoring import is_critical_alert
+
+    RULE = "alert_rule_v2"
+    if conn.execute("SELECT 1 FROM preference WHERE key=?", (RULE,)).fetchone():
+        return 0
+    rows = conn.execute(
+        "SELECT id, relevance_score, urgency, impact, confidence, status, "
+        "event_time, first_seen, is_alert FROM story").fetchall()
+    changed = 0
+    for r in rows:
+        want = is_critical_alert(
+            r["relevance_score"] or 0, r["urgency"] or "", r["impact"] or "",
+            r["confidence"] or "", status=r["status"],
+            event_time=r["event_time"] or r["first_seen"])
+        if bool(r["is_alert"]) != want:
+            conn.execute("UPDATE story SET is_alert=? WHERE id=?",
+                         (1 if want else 0, r["id"]))
+            changed += 1
+    conn.execute("INSERT OR REPLACE INTO preference(key, value) VALUES (?, 'done')",
+                 (RULE,))
+    if changed:
+        log.info("re-qualified %d stories against the current alert rule", changed)
     return changed
 
 

@@ -16,13 +16,15 @@ from datetime import datetime, timedelta, timezone
 
 from .store import DraftClaim, DraftSource, StoryDraft
 
-# Anchor demo timestamps to "recent" relative to an assumed run date so the
-# freshness UI behaves. These remain clearly demo regardless of real date.
-_BASE = datetime(2026, 7, 23, 6, 0, tzinfo=timezone.utc)
-
-
 def _iso(hours_ago: float) -> str:
-    return (_BASE - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Demo timestamp, relative to when the data is seeded.
+
+    Anchored to *now* rather than a fixed date: a hardcoded anchor silently ages,
+    which made the whole demo set look weeks stale (breaking the freshness badge
+    and disqualifying every demo story from alerting).
+    """
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
 
 
 def _demo_url(slug: str) -> str:

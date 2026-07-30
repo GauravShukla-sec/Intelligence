@@ -149,7 +149,8 @@ def save_story(conn, draft: StoryDraft, analyzer: AnalyzerProtocol,
     )
     likelihood = clamp_scale(ai.likelihood, LIKELIHOOD_LEVELS, "Possible")
     trend = clamp_scale(ai.trend, TREND_LEVELS, "Stable")
-    alert = is_critical_alert(breakdown.total, urgency, impact, confidence)
+    alert = is_critical_alert(breakdown.total, urgency, impact, confidence,
+                              status=draft.status, event_time=draft.event_time)
 
     scoring_json = {
         "relevance": breakdown.to_dict(),

@@ -103,6 +103,11 @@ def list_stories(conn, filters: dict[str, Any] | None = None,
     order = "relevance_score DESC, last_updated DESC"
     if filters.get("sort") == "recent":
         order = "last_updated DESC"
+    elif filters.get("sort") == "event":
+        # Newest EVENT first. Sorting by last_updated looks jumbled wherever the
+        # event date is what's displayed: an old event re-verified today would
+        # jump to the top of a list labelled "newest first".
+        order = "COALESCE(event_time, first_seen) DESC"
     elif filters.get("sort") == "urgency":
         order = "(urgency='Immediate') DESC, (urgency='24 Hours') DESC, relevance_score DESC"
 
@@ -268,8 +273,8 @@ def _regulation_for_story(conn, story_id: str) -> dict | None:
 
 
 def list_alerts(conn, data_mode: str | None = None) -> list[dict]:
-    # Latest-first so the newest alert leads (and drives the "new" badge).
-    f = {"alerts_only": True, "sort": "recent"}
+    # Newest EVENT first, matching the date shown on each alert card.
+    f = {"alerts_only": True, "sort": "event"}
     if data_mode:
         f["data_mode"] = data_mode
     stories = list_stories(conn, f, limit=50)

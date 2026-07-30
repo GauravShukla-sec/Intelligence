@@ -12,6 +12,7 @@ these signals from the story content. Scoring is pure and deterministic.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 # Dimension key -> (max points, label). Order defines display order.
@@ -153,13 +154,51 @@ def derive_confidence(
 # --------------------------------------------------------------------------
 # Composite alerting decision
 # --------------------------------------------------------------------------
-def is_critical_alert(score: int, urgency: str, impact: str, confidence: str) -> bool:
+ALERT_MAX_EVENT_AGE_DAYS = 7
+
+
+def is_critical_alert(score: int, urgency: str, impact: str, confidence: str,
+                      *, status: str | None = None, event_time: str | None = None,
+                      now: datetime | None = None) -> bool:
     """Only surface prompt-action developments as alerts.
 
-    Keeps the Critical Alerts panel meaningful (avoids alert fatigue).
+    Keeps the Critical Alerts panel meaningful (avoids alert fatigue). A single
+    permissive threshold previously flagged ~11% of all stories, including
+    Level-2 travel advisories and a feature about earthquake-resistant
+    architecture. The gate now requires all of:
+
+      * not a travel advisory — those belong to Travel Risk, and level moves are
+        reported by the advisory change feed
+      * evidence worth acting on — Low/Unverified confidence never alerts
+      * high impact AND near-term urgency
+      * a RECENT event: "prompt action" is meaningless for something weeks old
+      * a score floor that scales with impact (Critical 50+, High 65+)
     """
-    if confidence in {"Unverified"} and impact != "Critical":
+    if (status or "").lower() == "advisory":
         return False
-    high_impact = impact in {"High", "Critical"}
-    urgent = urgency in {"Immediate", "24 Hours"}
-    return bool(high_impact and urgent and score >= 45)
+    if confidence in {"Unverified", "Low"}:
+        return False
+    if impact not in {"High", "Critical"}:
+        return False
+    if urgency not in {"Immediate", "24 Hours"}:
+        return False
+    if not _event_is_recent(event_time, now):
+        return False
+    return score >= (50 if impact == "Critical" else 65)
+
+
+def _event_is_recent(event_time: str | None, now: datetime | None = None) -> bool:
+    """True when the event is within the alerting window (unknown dates pass).
+
+    An unparseable/absent timestamp must not silently suppress a live alert, so
+    the benefit of the doubt goes to alerting.
+    """
+    if not event_time:
+        return True
+    try:
+        ts = datetime.strptime(str(event_time)[:19], "%Y-%m-%dT%H:%M:%S").replace(
+            tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    ref = now or datetime.now(timezone.utc)
+    return (ref - ts) <= timedelta(days=ALERT_MAX_EVENT_AGE_DAYS)
