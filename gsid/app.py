@@ -510,6 +510,9 @@ def create_app(config: Config | None = None) -> Flask:
             return jsonify({"error": "ingestion_disabled",
                             "detail": "Set GSID_DATA_MODE=live or hybrid to enable."}), 400
         from .ingestion.pipeline import IngestionPipeline
+        # Who triggered a shared, expensive refresh is auditable.
+        db.audit(get_conn(), "user:admin" if is_admin() else "user:public",
+                 "trigger_ingest", "system", None, {"ip": ip})
         pipeline = IngestionPipeline(get_conn(), config, analyzer)
         try:
             result = pipeline.run()

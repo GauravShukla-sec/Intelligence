@@ -15,7 +15,9 @@ from .connectors import make_connector, selected_feeds, FeedItem
 from .dedup import cluster_items, detect_circular
 from .sanitize import clean_content, is_valid_url
 from ..store import DraftClaim, DraftSource, StoryDraft, save_story
-from ..taxonomy import CATEGORY_IDS, country_name, resolve_country, subject_countries
+from ..taxonomy import (
+    CATEGORY_IDS, advisory_destination, country_name, subject_countries,
+)
 from ..db import utcnow
 
 log = logging.getLogger("gsid.pipeline")
@@ -140,11 +142,8 @@ class IngestionPipeline:
         dest_code = None
         location_text = ""
         if travel:
-            # Prefer an authoritative destination ISO if a connector supplied
-            # one (e.g. Canada's country-iso); else parse the headline / URL.
-            dest_code = (resolve_country(getattr(lead, "subject_country", ""))
-                         or resolve_country(_advisory_country_text(lead.title))
-                         or resolve_country(lead.link))
+            dest_code = advisory_destination(
+                lead.title, lead.link, getattr(lead, "subject_country", ""))
             if dest_code:
                 location_text = country_name(dest_code)
 
@@ -177,10 +176,16 @@ class IngestionPipeline:
             source_index=0,
         )]
 
-        if travel and dest_code:
-            headline = f"Travel advisory: {country_name(dest_code)}"
-            primary_country = dest_code
-            countries = [dest_code]
+        if travel:
+            # An advisory belongs to its DESTINATION only. If the destination
+            # can't be resolved we leave it untagged: guessing from the body
+            # would tag it to the issuing government (US State advisories say
+            # "U.S. citizens…"), piling every unresolved advisory onto that
+            # government's own Travel Risk page.
+            headline = (f"Travel advisory: {country_name(dest_code)}" if dest_code
+                        else lead.title)
+            countries = [dest_code] if dest_code else []
+            primary_country = dest_code or ""
         else:
             headline = lead.title
             # Geo-tag to the countries the story is ABOUT (headline first, so a
@@ -202,24 +207,6 @@ class IngestionPipeline:
             claims=claims,
             is_demo=False,
         )
-
-
-def _advisory_country_text(title: str) -> str:
-    """Extract the country portion from a travel-advisory headline.
-
-    Handles 'Spain', 'Spain Travel Advisory', 'France - Level 2: …',
-    'Mexico Travel Advisory Level 3 …'.
-    """
-    t = (title or "").strip()
-    for sep in (" - ", " – ", " — ", ":"):
-        if sep in t:
-            t = t.split(sep, 1)[0].strip()
-    for marker in ("Travel Advisory", "Travel Alert", "Travel Warning",
-                   "Level 1", "Level 2", "Level 3", "Level 4"):
-        idx = t.lower().find(marker.lower())
-        if idx != -1:
-            t = t[:idx].strip()
-    return t
 
 
 def _looks_relevant(item: FeedItem) -> bool:

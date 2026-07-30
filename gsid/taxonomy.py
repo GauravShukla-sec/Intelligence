@@ -151,6 +151,17 @@ NAME_TO_ISO.update({
     "south korea": "kr", "north korea": "kp", "czech republic": "cz",
     "the gambia": "gm", "drc": "cd", "democratic republic of the congo": "cd",
     "saudi": "sa", "russian": "ru", "chinese": "cn", "ukrainian": "ua",
+    # Naming variants used by government advisory feeds (US State, FCDO, GAC).
+    "burma": "mm", "kyrgyz republic": "kg", "the kyrgyz republic": "kg",
+    "cabo verde": "cv", "cote d ivoire": "ci", "cote d'ivoire": "ci",
+    "côte d’ivoire": "ci", "cote d’ivoire": "ci", "ivory coast": "ci",
+    "sao tome and principe": "st", "são tomé and príncipe": "st",
+    "kosovo": "xk", "french guiana": "gf", "mayotte": "yt", "macau": "mo",
+    "u.s. virgin islands": "vi", "us virgin islands": "vi",
+    "virgin islands": "vi", "british virgin islands": "vg",
+    "bonaire": "bq", "sint eustatius": "bq", "saba": "bq",
+    "timor leste": "tl", "east timor": "tl", "turkiye": "tr", "türkiye": "tr",
+    "israel and palestine": "il", "the gambia": "gm", "the bahamas": "bs",
 })
 
 
@@ -174,20 +185,24 @@ _ABBR_RE = [
 ]
 
 
-def mentioned_countries(text: str | None, limit: int = 8) -> list[str]:
+def mentioned_countries(text: str | None, limit: int = 8,
+                        include_abbr: bool = True) -> list[str]:
     """ISO-2 codes of countries named in the text, in first-seen order.
 
     Used to geo-tag a development to its subject countries. Case-insensitive
-    for full names; case-sensitive for the US/UK abbreviations.
+    for full names; case-sensitive for the US/UK abbreviations. Set
+    ``include_abbr=False`` where a stray "U.S." would be actively wrong — e.g.
+    resolving the destination of "U.S. Virgin Islands - Level 2".
     """
     if not text:
         return []
     found: list[str] = []
     seen: set[str] = set()
-    for rx, code in _ABBR_RE:
-        if code not in seen and rx.search(text):
-            seen.add(code)
-            found.append(code)
+    if include_abbr:
+        for rx, code in _ABBR_RE:
+            if code not in seen and rx.search(text):
+                seen.add(code)
+                found.append(code)
     for m in _MENTION_RE.finditer(text):
         code = NAME_TO_ISO.get(m.group(1).lower())
         if code and code not in seen:
@@ -211,6 +226,54 @@ def subject_countries(headline: str | None, body: str | None = "",
     if head:
         return head
     return mentioned_countries(body, limit)
+
+
+_ADVISORY_LABEL_RE = re.compile(
+    r"^\s*travel\s+(?:advisor(?:y|ies)|warnings?|alerts?)\s*:\s*(.+)$", re.IGNORECASE)
+
+
+def advisory_country_text(title: str) -> str:
+    """Extract the country portion from a travel-advisory headline.
+
+    Handles the raw feed forms — 'Spain', 'Spain Travel Advisory',
+    'France - Level 2: …', 'Mexico Travel Advisory Level 3 …' — and our own
+    normalized form 'Travel advisory: Spain', where the country is on the RIGHT
+    of the colon (splitting left would return just the label).
+    """
+    t = (title or "").strip()
+    labelled = _ADVISORY_LABEL_RE.match(t)
+    if labelled:
+        return labelled.group(1).strip()
+    for sep in (" - ", " – ", " — ", ":"):
+        if sep in t:
+            t = t.split(sep, 1)[0].strip()
+    for marker in ("Travel Advisory", "Travel Alert", "Travel Warning",
+                   "Level 1", "Level 2", "Level 3", "Level 4"):
+        idx = t.lower().find(marker.lower())
+        if idx != -1:
+            t = t[:idx].strip()
+    return t
+
+
+def advisory_destination(title: str | None, link: str = "",
+                         subject_country: str = "") -> str | None:
+    """Resolve which DESTINATION a government advisory is about.
+
+    An advisory must be geo-tagged to its destination, never to the issuing
+    government — tagging it to the publisher makes every unresolved advisory
+    pile onto that government's own country page. Tries, in order: an
+    authoritative ISO supplied by the connector, an exact name match on the
+    headline, the URL slug, then a substring match (so 'Turks and Caicos
+    Islands' still resolves even though the taxonomy name is shorter).
+    Abbreviations are excluded so 'U.S. Virgin Islands' isn't read as the US.
+    Returns None when it genuinely cannot be determined — callers must then
+    leave the advisory untagged rather than guess.
+    """
+    head = advisory_country_text(title or "")
+    return (resolve_country(subject_country)
+            or resolve_country(head)
+            or resolve_country(link)
+            or next(iter(mentioned_countries(head, limit=1, include_abbr=False)), None))
 
 
 def resolve_country(text: str | None) -> str | None:

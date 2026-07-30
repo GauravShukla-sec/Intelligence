@@ -400,7 +400,14 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 .quiz-opt:hover { border-color: var(--border-2); }
 .quiz-opt.correct { border-color: var(--conf-confirmed); background: color-mix(in srgb,var(--conf-confirmed) 15%, var(--panel)); }
 .quiz-opt.wrong { border-color: var(--sev-critical); background: color-mix(in srgb,var(--sev-critical) 12%, var(--panel)); }
-.scenario-opt { border: 1px solid var(--border); border-radius: 8px; padding: .7rem; margin-bottom: .6rem; cursor: pointer; background: var(--panel); }
+/* Buttons don't inherit colour/font from the page, so these must be explicit —
+   without them the option text renders as default black on the dark panel. */
+.scenario-opt {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid var(--border); border-radius: 8px; padding: .7rem;
+  margin-bottom: .6rem; cursor: pointer; background: var(--panel);
+  color: var(--text); font: inherit;
+}
 .scenario-opt:hover { border-color: var(--accent); }
 .scenario-analysis { border-left: 3px solid var(--accent); padding: .5rem .8rem; margin-top: .5rem; background: var(--panel-2); border-radius: 0 8px 8px 0; }
 

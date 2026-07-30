@@ -83,7 +83,8 @@ class Config:
     # browser (localStorage), so no login is needed just to use the desk.
     public_readonly: bool = False
     admin_token: str = ""
-    public_allow_refresh: bool = True
+    # Triggering ingestion is expensive and shared: admin-only by default.
+    public_allow_refresh: bool = False
 
     default_timezone: str = "UTC"
 
@@ -125,6 +126,6 @@ def load_config(env_file: str | os.PathLike | None = None) -> Config:
         public_readonly=_as_bool(os.environ.get("GSID_PUBLIC_READONLY"), False),
         admin_token=(os.environ.get("GSID_ADMIN_TOKEN", "")
                      or os.environ.get("GSID_ACCESS_TOKEN", "")),
-        public_allow_refresh=_as_bool(os.environ.get("GSID_PUBLIC_ALLOW_REFRESH"), True),
+        public_allow_refresh=_as_bool(os.environ.get("GSID_PUBLIC_ALLOW_REFRESH"), False),
         default_timezone=os.environ.get("GSID_DEFAULT_TIMEZONE", "UTC"),
     )

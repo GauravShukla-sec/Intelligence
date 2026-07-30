@@ -813,16 +813,34 @@
     host.innerHTML = "";
     host.appendChild(h("h2", null, "11 · Quick Knowledge Check"));
     const stats = API.state.quizStats;
-    host.appendChild(h("p", { class: "sd-reason" }, "Local score: " + stats.correct + " / " + stats.asked + " correct. Difficulty adapts to your performance."));
+    // Keep a handle on the score line so it updates as you answer — otherwise
+    // it renders once and appears stuck at "0 / 0".
+    const scoreEl = h("p", { class: "sd-reason" }, "");
+    const paintScore = () => {
+      scoreEl.textContent = "Local score: " + stats.correct + " / " + stats.asked
+        + " correct. Difficulty adapts to your performance.";
+    };
+    paintScore();
+    host.appendChild(scoreEl);
     data.questions.forEach((q) => {
       const qEl = h("div", { class: "quiz-q" }, [h("strong", null, q.question)]);
       const opts = q.options.map((o, i) => h("button", { class: "quiz-opt", onclick: async (e) => {
         const btns = qEl.querySelectorAll(".quiz-opt"); btns.forEach((b) => (b.disabled = true));
-        const res = await API.quizAnswer(q.id, i);
+        const target = e.currentTarget;
+        let res;
+        try {
+          res = await API.quizAnswer(q.id, i);
+        } catch (err) {
+          // Never fail silently — a dead-looking button is worse than an error.
+          btns.forEach((b) => (b.disabled = false));
+          qEl.appendChild(h("p", { class: "sd-reason" }, "Could not check that answer: " + err.message));
+          return;
+        }
         stats.asked++; if (res.correct) stats.correct++;
         API.LS.set("quizStats", stats);
+        paintScore();
         btns[res.answer_index].classList.add("correct");
-        if (!res.correct) e.target.classList.add("wrong");
+        if (!res.correct) target.classList.add("wrong");
         qEl.appendChild(h("p", { class: "sd-reason" }, (res.correct ? "✓ Correct. " : "✗ Not quite. ") + res.explanation));
       } }, o));
       opts.forEach((o) => qEl.appendChild(o));

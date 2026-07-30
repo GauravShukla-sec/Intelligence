@@ -8,6 +8,7 @@ and a full-text-search sync helper.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .taxonomy import CATEGORY_NAMES, REGIONS, COUNTRY_REGION, COUNTRY_NAMES
+
+log = logging.getLogger("gsid.db")
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
@@ -42,6 +45,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate(conn)
     _cleanup_stale_citations(conn)
     _backfill_country_tags(conn)
+    _retag_advisories(conn)
     _seed_reference(conn)
     conn.commit()
 
@@ -81,6 +85,55 @@ def _backfill_country_tags(conn: sqlite3.Connection) -> None:
             (codes[0], region_for_country(codes[0]), r["id"]))
     conn.execute(
         "INSERT OR REPLACE INTO preference(key, value) VALUES ('country_retag_v2','done')")
+
+
+def _retag_advisories(conn: sqlite3.Connection) -> int:
+    """Re-point travel advisories at their DESTINATION, not their publisher.
+
+    Advisories whose destination couldn't be parsed were previously tagged to
+    the issuing government, so e.g. every unresolved US State advisory landed on
+    the United States' own Travel Risk page — producing a bogus "Level 4 — do
+    not travel" consensus for the US built from advisories about other places.
+
+    Re-resolves each advisory from its headline. Where the destination still
+    can't be determined the tags are CLEARED: no tag is far better than a wrong
+    one, which actively corrupts the destination brief. Returns rows changed.
+    """
+    from .taxonomy import advisory_destination, country_name, region_for_country
+
+    marker = conn.execute(
+        "SELECT 1 FROM preference WHERE key='advisory_retag_v1'").fetchone()
+    if marker:
+        return 0
+    rows = conn.execute(
+        "SELECT id, headline FROM story WHERE status='advisory'").fetchall()
+    changed = 0
+    for r in rows:
+        dest = advisory_destination(r["headline"] or "")
+        current = {x["country"] for x in conn.execute(
+            "SELECT country FROM story_country WHERE story_id=?", (r["id"],))}
+        want = {dest} if dest else set()
+        if current == want:
+            continue
+        conn.execute("DELETE FROM story_country WHERE story_id=?", (r["id"],))
+        if dest:
+            conn.execute(
+                "INSERT OR IGNORE INTO story_country(story_id, country) VALUES (?,?)",
+                (r["id"], dest))
+            conn.execute(
+                "UPDATE story SET primary_country=?, primary_region=?, "
+                "location_text=? WHERE id=?",
+                (dest, region_for_country(dest), country_name(dest), r["id"]))
+        else:
+            conn.execute(
+                "UPDATE story SET primary_country='', primary_region=NULL WHERE id=?",
+                (r["id"],))
+        changed += 1
+    conn.execute(
+        "INSERT OR REPLACE INTO preference(key, value) VALUES ('advisory_retag_v1','done')")
+    if changed:
+        log.info("re-tagged %d travel advisories to their destination", changed)
+    return changed
 
 
 def _cleanup_stale_citations(conn: sqlite3.Connection) -> None:

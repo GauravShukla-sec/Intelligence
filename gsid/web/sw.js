@@ -80,7 +80,26 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Static assets: cache-first, then fill the cache in the background.
+  // Code (JS/CSS/HTML) must never go stale behind a cache: serve from network
+  // and fall back to cache only when offline. Relying on a human to bump
+  // CACHE_VERSION every release is a footgun — a missed bump ships old code to
+  // every installed client.
+  if (/\.(?:js|css)$/.test(url.pathname)) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(SHELL_CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Everything else (fonts, icons — effectively immutable): cache-first.
   event.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       if (res && res.ok && res.type === "basic") {
