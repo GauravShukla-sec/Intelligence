@@ -101,3 +101,45 @@ def test_conflicting_and_unverified_claims_present(conn):
     s = repository.get_story(conn, "demo_southasia_unrest")
     types = {c["claim_type"] for c in s["claims"]}
     assert "rumor" in types
+
+
+def _bare_story(conn, sid, headline, *, category="geopolitical", country="in",
+                is_demo=0, last_updated="2026-07-01T00:00:00Z"):
+    conn.execute(
+        "INSERT INTO story(id,headline,category,primary_country,first_seen,"
+        "last_updated,is_demo,status) VALUES (?,?,?,?,?,?,?,'developing')",
+        (sid, headline, category, country, last_updated, last_updated, is_demo))
+    conn.execute("INSERT INTO story_country(story_id,country) VALUES (?,?)",
+                 (sid, country))
+
+
+def test_related_stories_finds_near_duplicate_not_just_recent(conn):
+    """Candidates must be scoped by relevance, not recency.
+
+    Regression: the candidate scan used to order the whole table by
+    last_updated and take the first N, so an older near-duplicate was dropped
+    once the desk held more stories than the window.
+    """
+    _bare_story(conn, "r_anchor", "India's education minister resigns after weeks of protests")
+    _bare_story(conn, "r_dupe", "India's education minister resigns amid youth movement protests")
+    _bare_story(conn, "r_other", "Wildfires force evacuations across southern Europe",
+                category="natural_hazard", country="es")
+    # Newer, unrelated churn that would dominate a recency-ordered scan.
+    for i in range(20):
+        _bare_story(conn, f"r_noise{i}", f"Unrelated market bulletin number {i}",
+                    last_updated="2026-07-28T00:00:00Z")
+    conn.commit()
+
+    ids = {r["id"] for r in repository.related_stories(conn, "r_anchor")}
+    assert "r_dupe" in ids            # the near-duplicate is surfaced
+    assert "r_other" not in ids       # a different event is not
+    assert "r_anchor" not in ids      # never returns itself
+
+
+def test_related_stories_does_not_mix_demo_and_live(conn):
+    _bare_story(conn, "r_live", "Port strike halts container operations at the terminal")
+    _bare_story(conn, "r_demo", "Port strike halts container operations at the terminal",
+                is_demo=1)
+    conn.commit()
+    ids = {r["id"] for r in repository.related_stories(conn, "r_live")}
+    assert "r_demo" not in ids

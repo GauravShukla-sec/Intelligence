@@ -161,9 +161,16 @@ def list_stories_grouped(conn, filters: dict[str, Any] | None = None,
 
 def related_stories(conn, story_id: str, limit: int = 6,
                     threshold: float = _SIM_RELATED) -> list[dict]:
-    """Other stories covering a similar event, ranked by headline similarity."""
+    """Other stories covering a similar event, ranked by headline similarity.
+
+    Candidates are scoped by RELEVANCE (shares the category or a tagged
+    country), not merely by recency: ordering the whole table by last_updated
+    and taking the first N silently drops older near-duplicates once the desk
+    holds more stories than the scan window.
+    """
     target = conn.execute(
-        "SELECT headline FROM story WHERE id=?", (story_id,)).fetchone()
+        "SELECT id, headline, category, is_demo FROM story WHERE id=?",
+        (story_id,)).fetchone()
     if not target:
         return []
     tsig = signature(target["headline"])
@@ -171,8 +178,12 @@ def related_stories(conn, story_id: str, limit: int = 6,
         return []
     rows = conn.execute(
         "SELECT id, headline, primary_country, location_text, relevance_score "
-        "FROM story WHERE id<>? AND (status IS NULL OR status!='advisory') "
-        "ORDER BY last_updated DESC LIMIT 500", (story_id,)).fetchall()
+        "FROM story WHERE id<>? AND is_demo=? "
+        "AND (status IS NULL OR status!='advisory') "
+        "AND (category=? OR id IN (SELECT story_id FROM story_country "
+        "     WHERE country IN (SELECT country FROM story_country WHERE story_id=?))) "
+        "ORDER BY last_updated DESC LIMIT 800",
+        (story_id, target["is_demo"], target["category"], story_id)).fetchall()
     scored = []
     for r in rows:
         sc = jaccard(tsig, signature(r["headline"]))
