@@ -316,6 +316,14 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 .detail-ratings { display: flex; flex-wrap: wrap; gap: .4rem; }
 .detail-cols { display: grid; grid-template-columns: 1fr 320px; gap: 1.2rem; align-items: start; }
 @media (max-width: 900px){ .detail-cols { grid-template-columns: 1fr; } }
+/* Full-width appendix below the columns: reference material that would
+   otherwise make the narrow rail outgrow the main column. */
+.detail-appendix .cite-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: .5rem; align-items: start;
+}
+.detail-appendix .cite-grid .citation { margin-bottom: 0; }
+.detail-appendix ul.cite-grid { padding-left: 0; }
 .detail-section { margin-bottom: 1.3rem; }
 .detail-section h3 { font-size: .82rem; text-transform: uppercase; letter-spacing: .07em; color: var(--accent-2); border-bottom: 1px solid var(--border); padding-bottom: .3rem; }
 ul.clean { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .5rem; }

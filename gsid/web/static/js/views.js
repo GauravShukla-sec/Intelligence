@@ -479,7 +479,14 @@
         h("div", { class: "grid" }, (a.actions || []).map((ac) =>
           h("div", { class: "claim" }, [h("span", { class: "claim-type" }, ac.type), " ", ac.text])))));
 
-      // ---- right column ----
+      // Indicators — analytical content, so it belongs in the main column. In
+      // the 320px rail this long list wrapped badly and made the rail outgrow
+      // the main column, leaving a large void beside it on wide screens.
+      left.appendChild(detailSection("Indicators to monitor",
+        h("ul", { class: "clean" }, (s.indicators || []).map((i) =>
+          h("li", null, [i.text, " ", C.chip(i.direction, i.direction === "improvement" ? "sev-low" : i.direction === "deterioration" ? "sev-high" : "", "◍")])))));
+
+      // ---- right column (at-a-glance metadata only) ----
       right.appendChild(h("div", { class: "panel" }, [
         h("h2", null, "Relevance score"),
         h("div", { style: "display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem" }, [C.scoreRing(s.relevance_score), h("span", { class: "sd-reason" }, "0–100 documented model. Each dimension is explained below.")]),
@@ -502,37 +509,33 @@
         affectedBlock("Infrastructure", pa.infrastructure || []),
       ]));
 
-      // Indicators
-      right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
-        h("h2", null, "Indicators to monitor"),
-        h("ul", { class: "clean" }, (s.indicators || []).map((i) =>
-          h("li", null, [i.text, " ", C.chip(i.direction, i.direction === "improvement" ? "sev-low" : i.direction === "deterioration" ? "sev-high" : "", "◍")]))),
-      ]));
+      // regulation panel if present
+      if (s.regulation) right.appendChild(regulationPanel(s.regulation));
 
-      // Sources / transparency
-      right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
+      wrap.appendChild(h("div", { class: "detail-cols" }, [left, right]));
+
+      // Reference/appendix material runs FULL WIDTH below the two columns.
+      // Keeping these out of the narrow rail stops it outgrowing the main
+      // column (which left a large void beside it) and gives citation URLs and
+      // headlines room to breathe instead of wrapping in a ~440px gutter.
+      const appendix = h("div", { class: "detail-appendix" });
+      appendix.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
         h("h2", null, "Sources & transparency"),
         h("p", { class: "sd-reason" }, "Every claim links to its exact source. Tier 1 = primary/authoritative → Tier 4 = unverified signal."),
-        h("div", null, (s.citations || []).map(citationEl)),
+        h("div", { class: "cite-grid" }, (s.citations || []).map(citationEl)),
       ]));
-
-      // similar coverage (related stories on the same event)
       if (s.similar && s.similar.length) {
-        right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
+        appendix.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
           h("h2", null, "Similar coverage"),
           h("p", { class: "sd-reason" }, "Other tracked reports on a closely related event."),
-          h("ul", { class: "clean" }, s.similar.map((x) =>
+          h("ul", { class: "clean cite-grid" }, s.similar.map((x) =>
             h("li", null, [
               h("a", { href: "#/story/" + x.id }, C.cleanHeadline(x.headline)),
               x.location_text ? h("span", { class: "sd-reason" }, " · " + x.location_text) : null,
             ]))),
         ]));
       }
-
-      // regulation panel if present
-      if (s.regulation) right.appendChild(regulationPanel(s.regulation));
-
-      wrap.appendChild(h("div", { class: "detail-cols" }, [left, right]));
+      wrap.appendChild(appendix);
       return wrap;
     });
     return node;
