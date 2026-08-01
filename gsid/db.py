@@ -47,6 +47,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _backfill_country_tags(conn)
     _retag_advisories(conn)
     _requalify_alerts(conn)
+    _reclassify_on_startup(conn)
     _seed_reference(conn)
     conn.commit()
 
@@ -168,6 +169,39 @@ def _requalify_alerts(conn: sqlite3.Connection) -> int:
     if changed:
         log.info("re-qualified %d stories against the current alert rule", changed)
     return changed
+
+
+def _reclassify_on_startup(conn: sqlite3.Connection) -> int:
+    """Re-classify stored stories once per classifier version.
+
+    New stories get the current classifier at ingestion, but stories already in
+    the database keep whatever category they were given — so without this the
+    live desk keeps showing diplomacy under Cyber long after the classifier was
+    fixed. Deployments have no shell, so this has to run on startup rather than
+    as a CLI step.
+
+    Delegates to the same rollback-safe routine as `run.py --reclassify`, so
+    every prior value is recorded in `category_backup` and the pass can still be
+    undone with `--reclassify-rollback`. Bump the marker to re-run after a
+    material classifier change.
+    """
+    from .reclassify import reclassify_all
+
+    MARKER = "reclassify_v1"
+    if conn.execute("SELECT 1 FROM preference WHERE key=?", (MARKER,)).fetchone():
+        return 0
+    try:
+        report = reclassify_all(conn)
+    except Exception:  # a classification pass must never block startup
+        log.exception("startup reclassification failed; leaving categories as-is")
+        return 0
+    conn.execute("INSERT OR REPLACE INTO preference(key, value) VALUES (?, 'done')",
+                 (MARKER,))
+    if report["changed"]:
+        log.info("startup reclassification: %d of %d stories recategorised "
+                 "(batch %s, reversible via --reclassify-rollback)",
+                 report["changed"], report["scanned"], report["batch"])
+    return report["changed"]
 
 
 def _cleanup_stale_citations(conn: sqlite3.Connection) -> None:
