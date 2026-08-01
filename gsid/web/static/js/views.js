@@ -397,9 +397,25 @@
           C.chip(s.location_text || "—", "", "⚑"), s.is_demo ? h("span", { class: "demo-tag" }, "demo data") : null,
           s.is_alert ? C.chip("Critical alert", "sev-critical", "▲") : null]),
         h("h1", null, C.cleanHeadline(s.headline)),
-        C.ratingChips(s),
+        (() => { const rc = C.ratingChips(s); rc.classList.add("inferred"); return rc; })(),
         h("div", { class: "sd-reason" }, "Event: " + API.fmtTime(s.event_time) + " · First seen: " + API.fmtTime(s.first_seen) + " · Last verified: " + API.fmtTime(s.last_updated) + " · Status: " + (s.status || "—")),
       ]));
+
+      // "Confirmed facts only" hides every generated section (.inferred) and
+      // filters claims to sourced facts, so what remains is evidence.
+      const factsBanner = h("div", { class: "facts-banner", hidden: true },
+        "Confirmed facts only: interpretation, ratings and recommendations are "
+        + "hidden. Showing sourced claims and citations.");
+      const factsBtn = toolBtn("✓ Show only confirmed facts", (e) => {
+        confirmedOnly = !confirmedOnly;
+        wrap.classList.toggle("facts-only", confirmedOnly);
+        const btn = e.currentTarget;
+        btn.setAttribute("aria-pressed", String(confirmedOnly));
+        btn.classList.toggle("active", confirmedOnly);
+        factsBanner.hidden = !confirmedOnly;
+        renderClaims();
+      }, true);
+      factsBtn.setAttribute("aria-pressed", "false");
 
       // toolbar
       wrap.appendChild(h("div", { class: "btn-row", style: "margin-bottom:1rem" }, [
@@ -409,9 +425,10 @@
           C.toast(nowSaved ? "Saved to this browser." : "Removed.");
         }),
         toolBtn("⚔ Challenge this analysis", () => openChallenge(id)),
-        toolBtn("✓ Show only confirmed facts", (e) => { confirmedOnly = !confirmedOnly; e.target.classList.toggle("btn"); e.target.classList.toggle("secondary"); renderClaims(); }, true),
+        factsBtn,
         exportMenu(s),
       ]));
+      wrap.appendChild(factsBanner);
 
       // two columns
       const left = h("div");
@@ -436,28 +453,28 @@
       renderClaims();
 
       // Background
-      if (a.background) left.appendChild(detailSection("Background", h("p", null, a.background)));
+      if (a.background) left.appendChild(inferredSection("Background", h("p", null, a.background)));
 
       // Narrative comparison
       if ((s.narratives || []).length) {
-        left.appendChild(detailSection("Narrative comparison",
+        left.appendChild(inferredSection("Narrative comparison",
           h("div", { class: "grid grid-2" }, s.narratives.map((n) => h("div", { class: "narrative" }, [
             h("strong", null, n.label), h("p", { class: "sd-reason" }, "Who: " + (n.who || "—")),
             h("p", null, n.claim), h("p", { class: "sd-reason" }, "Evidence: " + n.evidence),
           ])))));
       } else {
-        left.appendChild(detailSection("Narrative comparison",
+        left.appendChild(inferredSection("Narrative comparison",
           h("p", { class: "sd-reason" }, "No materially different narrative captured. Use ‘Challenge this analysis’ to check for missing perspectives.")));
       }
 
       // Why global / why your work
-      if (a.why_global) left.appendChild(detailSection("Why it matters globally", h("p", null, a.why_global)));
-      left.appendChild(detailSection("Why this matters to your work",
+      if (a.why_global) left.appendChild(inferredSection("Why it matters globally", h("p", null, a.why_global)));
+      left.appendChild(inferredSection("Why this matters to your work",
         h("ul", { class: "clean" }, (a.why_your_work || []).map((w) => h("li", null, w)))));
 
       // Risk pathway
       if ((a.risk_pathway || []).length) {
-        left.appendChild(detailSection("Risk pathway",
+        left.appendChild(inferredSection("Risk pathway",
           h("p", { class: "sc-sum" }, a.risk_pathway.join("  →  "))));
       }
 
@@ -471,28 +488,28 @@
       }
 
       // Questions
-      left.appendChild(detailSection("Questions you should ask today",
+      left.appendChild(inferredSection("Questions you should ask today",
         h("ul", { class: "clean" }, (a.questions || []).map((q) => h("li", null, q)))));
 
       // Recommended actions
-      left.appendChild(detailSection("Recommended actions",
+      left.appendChild(inferredSection("Recommended actions",
         h("div", { class: "grid" }, (a.actions || []).map((ac) =>
           h("div", { class: "claim" }, [h("span", { class: "claim-type" }, ac.type), " ", ac.text])))));
 
       // Indicators — analytical content, so it belongs in the main column. In
       // the 320px rail this long list wrapped badly and made the rail outgrow
       // the main column, leaving a large void beside it on wide screens.
-      left.appendChild(detailSection("Indicators to monitor",
+      left.appendChild(inferredSection("Indicators to monitor",
         h("ul", { class: "clean" }, (s.indicators || []).map((i) =>
           h("li", null, [i.text, " ", C.chip(i.direction, i.direction === "improvement" ? "sev-low" : i.direction === "deterioration" ? "sev-high" : "", "◍")])))));
 
       // ---- right column (at-a-glance metadata only) ----
-      right.appendChild(h("div", { class: "panel" }, [
+      right.appendChild(h("div", { class: "panel inferred" }, [
         h("h2", null, "Relevance score"),
         h("div", { style: "display:flex;align-items:center;gap:.8rem;margin-bottom:.6rem" }, [C.scoreRing(s.relevance_score), h("span", { class: "sd-reason" }, "0–100 documented model. Each dimension is explained below.")]),
         C.scoreBars(s.scoring),
       ]));
-      right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
+      right.appendChild(h("div", { class: "panel inferred", style: "margin-top:1rem" }, [
         h("h2", null, "Rating rationale"), C.ratingRationale(s.scoring),
       ]));
 
@@ -502,7 +519,7 @@
 
       // Potentially affected
       const pa = a.potentially_affected || {};
-      right.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
+      right.appendChild(h("div", { class: "panel inferred", style: "margin-top:1rem" }, [
         h("h2", null, "Potentially affected"),
         affectedBlock("Countries", (pa.countries || s.countries || []).map((x) => (x || "").toUpperCase())),
         affectedBlock("Business functions", pa.business_functions || []),
@@ -547,6 +564,15 @@
 
   function detailSection(title, body) {
     return h("section", { class: "detail-section" }, [h("h3", null, title), body]);
+  }
+  // Generated/interpretive sections. "Show only confirmed facts" hides these
+  // so the page shows sourced evidence only — previously the toggle filtered
+  // the claim list but left every inference on screen, which made the mode
+  // actively misleading.
+  function inferredSection(title, body) {
+    const el = detailSection(title, body);
+    el.classList.add("inferred");
+    return el;
   }
   function claimEl(c) {
     return h("div", { class: "claim" }, [

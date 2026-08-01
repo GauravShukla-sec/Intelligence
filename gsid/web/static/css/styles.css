@@ -314,6 +314,18 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 /* Story detail */
 .detail-head { display: flex; flex-direction: column; gap: .6rem; margin-bottom: 1rem; }
 .detail-ratings { display: flex; flex-wrap: wrap; gap: .4rem; }
+/* "Show only confirmed facts": hide every generated/interpretive block so the
+   page shows sourced evidence only. */
+.facts-only .inferred { display: none; }
+.facts-banner {
+  border: 1px solid var(--border-2); border-left: 3px solid var(--accent);
+  background: var(--panel-2); color: var(--text-dim);
+  border-radius: 0 8px 8px 0; padding: .6rem .8rem; margin-bottom: 1rem;
+  font-size: .88rem;
+}
+/* Toggle buttons need a visible pressed state, not just aria-pressed. */
+.btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
 .detail-cols { display: grid; grid-template-columns: 1fr 320px; gap: 1.2rem; align-items: start; }
 @media (max-width: 900px){ .detail-cols { grid-template-columns: 1fr; } }
 /* Full-width appendix below the columns: reference material that would
