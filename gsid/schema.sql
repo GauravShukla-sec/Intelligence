@@ -67,6 +67,10 @@ CREATE TABLE IF NOT EXISTS story (
     advisory_level    INTEGER NOT NULL DEFAULT 0,  -- worst-case level across sources
     advisory_json     TEXT,                 -- {consensus,lowest,spread,diverges,sources[]}
 
+    -- Classification audit (see ingestion/classify.py)
+    category_confidence REAL NOT NULL DEFAULT 0,
+    classification_json TEXT,               -- scores, matched terms, reason
+
     analysis_json     TEXT,                 -- structured AI/heuristic analysis blob
     scoring_json      TEXT                  -- per-dimension score breakdown + rationale
 );
@@ -292,6 +296,15 @@ CREATE TABLE IF NOT EXISTS advisory_state (
     changed_at    TEXT,               -- when we last detected a material change
     last_seen     TEXT,               -- last run this advisory was observed
     PRIMARY KEY (feed_id, dest_country)
+);
+
+-- Category rollback log: lets a reclassification pass be undone and audited.
+CREATE TABLE IF NOT EXISTS category_backup (
+    story_id     TEXT PRIMARY KEY REFERENCES story(id) ON DELETE CASCADE,
+    old_category TEXT,
+    new_category TEXT,
+    batch        TEXT,      -- reclassification run id
+    changed_at   TEXT
 );
 
 -- Full-text search over stories (standalone FTS, populated in code) --------

@@ -206,6 +206,8 @@ def _migrate(conn: sqlite3.Connection) -> None:
         "story": [
             ("advisory_level", "INTEGER NOT NULL DEFAULT 0"),
             ("advisory_json", "TEXT"),
+            ("category_confidence", "REAL NOT NULL DEFAULT 0"),
+            ("classification_json", "TEXT"),
         ],
         "citation": [
             ("advisory_level", "INTEGER NOT NULL DEFAULT 0"),

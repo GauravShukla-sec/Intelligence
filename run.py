@@ -29,6 +29,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ingest", action="store_true", help="run one ingestion cycle")
     parser.add_argument("--seed", action="store_true", help="seed demo data and exit")
     parser.add_argument("--reset", action="store_true", help="reset DB then seed demo data")
+    parser.add_argument("--reclassify", action="store_true",
+                        help="re-run category classification over stored stories")
+    parser.add_argument("--reclassify-rollback", action="store_true",
+                        help="undo the most recent reclassification pass")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --reclassify: report changes without writing")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO,
@@ -53,6 +59,23 @@ def main(argv: list[str] | None = None) -> int:
         if args.seed or args.reset:
             if not args.ingest:
                 return 0
+
+    if args.reclassify or args.reclassify_rollback:
+        from gsid.reclassify import reclassify_all, rollback
+        conn = db.connect(config.db_file)
+        db.init_db(conn)
+        if args.reclassify_rollback:
+            log.info("rollback result: %s", rollback(conn))
+        else:
+            report = reclassify_all(conn, dry_run=args.dry_run)
+            log.info("reclassify: scanned=%(scanned)d changed=%(changed)d "
+                     "dry_run=%(dry_run)s", report)
+            for move, n in report["moves"].items():
+                log.info("  %-44s %d", move, n)
+            if args.dry_run:
+                log.info("dry run — nothing written. Re-run without --dry-run to apply.")
+        conn.close()
+        return 0
 
     if args.ingest:
         from gsid.ingestion.pipeline import IngestionPipeline

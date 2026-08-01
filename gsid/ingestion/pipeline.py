@@ -11,42 +11,17 @@ from __future__ import annotations
 import logging
 
 from .advisory_levels import level_from_text
+from .classify import classify, looks_relevant
 from .connectors import make_connector, selected_feeds, FeedItem
 from .dedup import cluster_items, detect_circular
 from .sanitize import clean_content, is_valid_url
 from ..store import DraftClaim, DraftSource, StoryDraft, save_story
 from ..taxonomy import (
-    CATEGORY_IDS, advisory_destination, country_name, subject_countries,
+    advisory_destination, country_name, subject_countries,
 )
 from ..db import utcnow
 
 log = logging.getLogger("gsid.pipeline")
-
-# Keyword hints to refine the category beyond the feed's default hint.
-_CATEGORY_KEYWORDS = {
-    "regulatory": ["regulation", "directive", "sanction", "law", "compliance",
-                   "customs", "tariff", "nis2", "ctpat", "gdpr", "ruling", "court"],
-    "supply_chain": ["port", "shipping", "cargo", "freight", "logistics", "canal",
-                     "container", "customs", "border", "supply chain"],
-    "cyber_physical": ["ransomware", "cyberattack", "ics", "scada", "malware",
-                       "breach", "gps jamming", "drone"],
-    "natural_hazard": ["earthquake", "flood", "wildfire", "hurricane", "typhoon",
-                       "volcano", "tsunami", "storm", "outbreak", "drought"],
-    "physical_corporate": ["factory", "warehouse", "office", "sabotage", "theft",
-                           "kidnap", "attack", "arson", "protest", "workplace"],
-    "continuity": ["blackout", "outage", "power", "water shortage", "telecom",
-                   "grid", "evacuation", "curfew"],
-    "economic_social": ["inflation", "strike", "layoff", "currency", "fuel shortage",
-                        "unrest", "food insecurity"],
-    "geopolitical": ["war", "military", "border", "coup", "election", "diplomat",
-                     "sanction", "treaty", "missile", "conflict"],
-}
-
-# Items with none of these signals are unlikely to be security-relevant.
-_RELEVANCE_HINTS = set()
-for _terms in _CATEGORY_KEYWORDS.values():
-    _RELEVANCE_HINTS.update(_terms)
-
 
 class IngestionPipeline:
     def __init__(self, conn, config, analyzer):
@@ -132,7 +107,16 @@ class IngestionPipeline:
         if not lead.title or not is_valid_url(lead.link):
             return None
 
-        category = _refine_category(lead.title + " " + body, lead.category_hint)
+        # Precision-first classification: word-boundary matching, weighted by
+        # field, deferring to authoritative source priors and answering
+        # "unclassified" rather than guessing. See ingestion/classify.py.
+        result = classify(
+            headline=lead.title, summary=body,
+            feed_id=lead.source_id,
+            source_names=[m.source_name for m in members],
+            feed_hint=lead.category_hint,
+        )
+        category = result.category
         origins = [m.source_name for m in members]
         circular = detect_circular(origins)
 
@@ -198,6 +182,8 @@ class IngestionPipeline:
             headline=headline,
             body=body,
             category=category,
+            classification=result.to_dict(),
+            category_confidence=result.confidence,
             location_text=location_text,
             primary_country=primary_country,
             countries=countries,
@@ -210,19 +196,6 @@ class IngestionPipeline:
 
 
 def _looks_relevant(item: FeedItem) -> bool:
-    text = f"{item.title} {item.summary}".lower()
-    if item.tier == 1:
-        return True  # official feeds are curated already
-    return any(term in text for term in _RELEVANCE_HINTS)
-
-
-def _refine_category(text: str, default_hint: str) -> str:
-    text = text.lower()
-    best = default_hint if default_hint in CATEGORY_IDS else "geopolitical"
-    best_score = 0
-    for cat, terms in _CATEGORY_KEYWORDS.items():
-        score = sum(1 for t in terms if t in text)
-        if score > best_score:
-            best_score = score
-            best = cat
-    return best
+    """Security-relevance pre-filter (word-boundary matched, see classify.py)."""
+    return looks_relevant(item.title, item.summary, tier=item.tier,
+                          feed_id=item.source_id)

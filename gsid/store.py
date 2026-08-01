@@ -79,6 +79,8 @@ class StoryDraft:
     events: list[dict[str, Any]] = field(default_factory=list)
     is_demo: bool = False
     story_id: str | None = None  # stable id for fixtures
+    classification: dict | None = None   # classifier audit trail
+    category_confidence: float = 0.0
 
 
 def _ensure_source(conn, s: DraftSource) -> str:
@@ -174,14 +176,17 @@ def save_story(conn, draft: StoryDraft, analyzer: AnalyzerProtocol,
         "INSERT OR REPLACE INTO story(id,headline,summary,category,primary_region,"
         "primary_country,location_text,lat,lon,event_time,first_seen,last_updated,"
         "status,relevance_score,urgency,geo_scope,impact,likelihood,velocity,"
-        "confidence,trend,is_alert,is_demo,dedup_key,analysis_json,scoring_json) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "confidence,trend,is_alert,is_demo,dedup_key,analysis_json,scoring_json,"
+        "category_confidence,classification_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (sid, draft.headline, ai.what_happened or clean_body[:400], draft.category,
          primary_region, primary_country, draft.location_text, draft.lat, draft.lon,
          draft.event_time or now, draft.event_time or now, now, draft.status,
          breakdown.total, urgency, geo_scope, impact, likelihood, velocity,
          confidence, trend, 1 if alert else 0, 1 if draft.is_demo else 0, key,
-         json.dumps(ai.to_dict()), json.dumps(scoring_json)),
+         json.dumps(ai.to_dict()), json.dumps(scoring_json),
+         draft.category_confidence,
+         json.dumps(draft.classification) if draft.classification else None),
     )
 
     # countries

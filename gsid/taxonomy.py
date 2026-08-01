@@ -308,6 +308,10 @@ CATEGORIES: list[dict[str, str]] = [
     {"id": "natural_hazard", "name": "Natural Hazards & Climate Security", "letter": "F"},
     {"id": "economic_social", "name": "Economic & Social Conditions", "letter": "G"},
     {"id": "continuity", "name": "Business Continuity & Resilience", "letter": "H"},
+    {"id": "health", "name": "Health & Medical Security", "letter": "I"},
+    # Explicit low-confidence bucket. Showing "Unclassified" is safer than
+    # asserting a wrong domain — see ingestion/classify.py.
+    {"id": "unclassified", "name": "General / Unclassified", "letter": "—"},
 ]
 CATEGORY_IDS = [c["id"] for c in CATEGORIES]
 CATEGORY_NAMES = {c["id"]: c["name"] for c in CATEGORIES}
