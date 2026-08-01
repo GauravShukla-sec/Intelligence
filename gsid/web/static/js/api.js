@@ -39,7 +39,7 @@
 
   API.get = (p) => req(p);
   API.meta = () => req("/api/meta");
-  API.stories = (qs) => req("/api/stories" + (qs ? "?" + qs : ""));
+  API.stories = (qs, opts) => req("/api/stories" + (qs ? "?" + qs : ""), opts);
   API.story = (id) => req("/api/stories/" + encodeURIComponent(id));
   API.challenge = (id) => req("/api/stories/" + encodeURIComponent(id) + "/challenge");
   API.brief = () => req("/api/brief");

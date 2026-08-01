@@ -342,13 +342,44 @@
       return h("label", null, [label, s]);
     }
 
+    // Changing a filter used to blank the list and show "Loading intelligence…"
+    // for seconds, and a fast second change could race the first response back
+    // over the newer one. Keep current results on screen, mark the list busy,
+    // cancel the in-flight request, and ignore anything stale.
+    let inflight = null;
+    let requestSeq = 0;
+
     async function refresh() {
-      listWrap.innerHTML = "";
-      listWrap.appendChild(C.loading());
+      const seq = ++requestSeq;
+      if (inflight) inflight.abort();
+      const controller = new AbortController();
+      inflight = controller;
+
       const qs = new URLSearchParams();
       Object.keys(filters).forEach((k) => { if (filters[k]) qs.set(k, filters[k]); });
       qs.set("group", "1");  // collapse near-duplicate coverage into lead + similar
-      const data = await API.stories(qs.toString());
+
+      // Only the very first paint has nothing worth keeping on screen.
+      if (!listWrap.childElementCount) listWrap.appendChild(C.loading());
+      listWrap.classList.add("is-busy");
+      listWrap.setAttribute("aria-busy", "true");
+
+      let data;
+      try {
+        data = await API.stories(qs.toString(), { signal: controller.signal });
+      } catch (err) {
+        if (err.name === "AbortError") return;   // superseded by a newer filter
+        if (seq !== requestSeq) return;
+        listWrap.classList.remove("is-busy");
+        listWrap.removeAttribute("aria-busy");
+        listWrap.innerHTML = "";
+        listWrap.appendChild(C.empty("Could not load stories: " + err.message));
+        return;
+      }
+      if (seq !== requestSeq) return;            // a newer response already won
+
+      listWrap.classList.remove("is-busy");
+      listWrap.removeAttribute("aria-busy");
       listWrap.innerHTML = "";
       if (!data.stories.length) { listWrap.appendChild(C.empty("No stories match these filters.")); return; }
       data.stories.forEach((s) => listWrap.appendChild(C.storyCard(s, openStory)));
@@ -898,14 +929,52 @@
         h("h2", null, "Relevance scoring model (0–100)"),
         h("p", { class: "sd-reason" }, "People safety 20 · Facilities 15 · Operational 15 · Supply-chain 15 · Regulatory 15 · Geopolitical 10 · Cyber-physical 5 · Reputational 5. Each story explains every point awarded."),
       ]));
+      // 200 undifferentiated rows is not an audit trail you can actually use,
+      // so filter by actor/action and free text. Filtering is client-side over
+      // the fetched page — no extra endpoint, and it stays instant.
+      const rows = audit.audit || [];
+      const uniq = (key) => Array.from(new Set(rows.map((a) => a[key]).filter(Boolean))).sort();
+      const state = { actor: "", action: "", q: "" };
+      const tbody = h("dl", { class: "kv" });
+      const count = h("span", { class: "sd-reason" }, "");
+
+      function paintAudit() {
+        const q = state.q.toLowerCase();
+        const shown = rows.filter((a) =>
+          (!state.actor || a.actor === state.actor)
+          && (!state.action || a.action === state.action)
+          && (!q || JSON.stringify(a).toLowerCase().includes(q)));
+        tbody.innerHTML = "";
+        if (!shown.length) {
+          tbody.appendChild(h("p", { class: "sd-reason" }, "No entries match these filters."));
+        }
+        shown.forEach((a) => {
+          tbody.appendChild(h("dt", { style: "font-family:var(--mono);font-size:.74rem" }, API.fmtTime(a.ts)));
+          tbody.appendChild(h("dd", null, "[" + a.actor + "] " + a.action
+            + (a.entity ? " · " + a.entity : "")
+            + (a.detail ? " — " + C.truncate(a.detail, 80) : "")));
+        });
+        count.textContent = "Showing " + shown.length + " of " + rows.length + " entries.";
+      }
+
+      const pick = (label, key, options) => {
+        const s = h("select", { onchange: (e) => { state[key] = e.target.value; paintAudit(); } },
+          [h("option", { value: "" }, "All")].concat(options.map((o) => h("option", { value: o }, o))));
+        return h("label", null, [label, s]);
+      };
+
       wrap.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
-        h("h2", null, "Audit log (latest 200)"),
-        h("div", { style: "max-height:420px;overflow:auto" }, h("dl", { class: "kv" },
-          audit.audit.flatMap((a) => [
-            h("dt", { style: "font-family:var(--mono);font-size:.74rem" }, API.fmtTime(a.ts)),
-            h("dd", null, "[" + a.actor + "] " + a.action + (a.entity ? " · " + a.entity : "") + (a.detail ? " — " + C.truncate(a.detail, 80) : "")),
-          ]))),
+        h("div", { class: "sc-top" }, [h("h2", null, "Audit log"), count]),
+        h("div", { class: "filters" }, [
+          pick("Actor", "actor", uniq("actor")),
+          pick("Action", "action", uniq("action")),
+          h("label", null, ["Contains", h("input", {
+            type: "search", placeholder: "story id, detail…",
+            oninput: (e) => { state.q = e.target.value; paintAudit(); } })]),
+        ]),
+        h("div", { style: "max-height:420px;overflow:auto" }, tbody),
       ]));
+      paintAudit();
       return wrap;
     });
     return node;
@@ -998,12 +1067,28 @@
         adminState,
         h("div", { class: "btn-row", style: "margin-top:.6rem" }, [
           h("button", { class: "btn secondary", onclick: async () => {
-            API.state.token = tokenInput.value; API.LS.set("token", tokenInput.value);
+            const value = tokenInput.value.trim();
+            // Submitting an empty box used to do nothing at all — no error, no
+            // toast — so it read as a broken button.
+            if (!value) {
+              tokenInput.setAttribute("aria-invalid", "true");
+              tokenInput.focus();
+              C.toast("Enter a token first.");
+              return;
+            }
+            tokenInput.removeAttribute("aria-invalid");
+            API.state.token = value; API.LS.set("token", value);
             try {
               const chk = await API.req("/api/admin/check");
-              C.toast(chk.is_admin ? "Admin unlocked." : "Token saved (not admin).");
-              if (chk.is_admin) location.reload();           // re-render with edit rights
-            } catch (e) { C.toast("Saved token."); }
+              if (chk.is_admin) {
+                C.toast("Admin unlocked.");
+                location.reload();                    // re-render with edit rights
+              } else {
+                // Say plainly that it did not work, rather than "saved".
+                C.toast("That token was not accepted.");
+                tokenInput.setAttribute("aria-invalid", "true");
+              }
+            } catch (e) { C.toast("Could not verify token: " + e.message); }
           } }, meta.public_readonly ? "Unlock admin" : "Save token"),
           (!meta.public_readonly || meta.public_allow_refresh || meta.is_admin)
             ? h("button", { class: "btn secondary", onclick: async (e) => {

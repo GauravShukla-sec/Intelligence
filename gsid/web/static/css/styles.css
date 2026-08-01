@@ -394,6 +394,27 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 .map-country.clickable { cursor: pointer; }
 .map-country.clickable:hover { stroke: var(--accent); stroke-width: 1; fill-opacity: 1; }
 .map-dot { cursor: pointer; }
+/* SVG shapes take focus via tabindex; an outline doesn't render reliably on
+   them, so the focus ring is drawn with a stroke instead. */
+.map-country.clickable:focus-visible,
+.map-dot circle:focus-visible {
+  outline: none; stroke: var(--focus); stroke-width: 2.5; fill-opacity: 1;
+}
+/* Refreshing a list: dim the stale results rather than blanking the page. */
+.is-busy { opacity: .55; transition: opacity .15s; pointer-events: none; }
+
+/* Text equivalent of the choropleth for keyboard/screen-reader users. */
+.map-alt { margin-top: .8rem; font-size: .88rem; color: var(--text-dim); }
+.map-alt summary { cursor: pointer; color: var(--accent); }
+.map-country-list {
+  list-style: none; padding: .6rem 0 0; margin: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .2rem;
+}
+.linklike {
+  background: none; border: 0; padding: .15rem 0; color: var(--text-dim);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.linklike:hover { color: var(--accent); text-decoration: underline; }
 
 /* Collapsed near-duplicate coverage in story lists */
 .story-group { display: flex; flex-direction: column; }
@@ -404,6 +425,9 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 }
 .similar-toggle:hover { color: var(--accent); }
 .similar-list { display: flex; flex-direction: column; gap: .25rem; padding: .1rem 0 .4rem .2rem; }
+/* An author `display` rule overrides the UA stylesheet's [hidden] rule, so
+   without this the list stayed visible and the toggle looked broken. */
+.similar-list[hidden] { display: none; }
 .similar-item { font-size: .82rem; color: var(--text-dim); }
 
 /* Learn / quiz / scenario */

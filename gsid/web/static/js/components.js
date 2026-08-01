@@ -104,10 +104,16 @@
       const list = h("div", { class: "similar-list", hidden: true },
         s.similar.map((x) => h("a", { class: "similar-item", href: "#/story/" + x.id,
           onclick: (e) => e.stopPropagation() }, cleanHeadline(x.headline))));
-      const toggle = h("button", { class: "similar-toggle",
-        onclick: (e) => { e.stopPropagation(); list.hidden = !list.hidden; toggle.setAttribute("aria-expanded", String(!list.hidden)); },
-        "aria-expanded": "false" },
-        "+" + s.similar.length + " similar report" + (s.similar.length > 1 ? "s" : ""));
+      const n = s.similar.length;
+      const noun = " similar report" + (n > 1 ? "s" : "");
+      const toggle = h("button", { class: "similar-toggle", "aria-expanded": "false" },
+        "+" + n + noun);
+      toggle.onclick = (e) => {
+        e.stopPropagation();
+        list.hidden = !list.hidden;
+        toggle.setAttribute("aria-expanded", String(!list.hidden));
+        toggle.textContent = (list.hidden ? "+" + n : "− Hide " + n) + noun;
+      };
       return h("div", { class: "story-group" }, [card, toggle, list]);
     }
     return card;

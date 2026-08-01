@@ -76,14 +76,29 @@
         path.style.fillOpacity = riskOpacity(r.count).toFixed(2);
         path.classList.add("has-risk");
       }
-      const title = svg("title", {});
-      title.textContent = r
-        ? `${f.properties.name} — ${r.count} development(s), worst impact ${r.impact}`
+      const label = r
+        ? `${f.properties.name} — ${r.count} tracked development${r.count > 1 ? "s" : ""}, worst impact ${r.impact}`
         : f.properties.name;
+      const title = svg("title", {});
+      title.textContent = label;
       path.appendChild(title);
-      if (iso) {
+
+      // Only countries that actually have tracked activity are interactive.
+      // Clicking an inert country just opened an empty filter, and making all
+      // 177 focusable would bury the keyboard user in meaningless tab stops.
+      if (iso && r) {
         path.classList.add("clickable");
-        path.addEventListener("click", () => onCountry(iso));
+        path.setAttribute("role", "button");
+        path.setAttribute("tabindex", "0");
+        path.setAttribute("aria-label", label);
+        const open = () => onCountry(iso);
+        path.addEventListener("click", open);
+        path.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+        });
+      } else {
+        // Decorative landmass: announced via the map's own label, not per-shape.
+        path.setAttribute("aria-hidden", "true");
       }
       s.appendChild(path);
     }
@@ -99,13 +114,45 @@
       const c = svg("circle", { cx, cy, r: p.is_alert ? 5 : 4,
         fill: IMPACT_COLOR[p.impact] || "var(--sev-moderate)", "fill-opacity": .95,
         stroke: "var(--bg)", "stroke-width": 1.2, style: "cursor:pointer" });
+      const label = (p.headline || "").replace("[DEMO] ", "")
+        + " — " + p.impact + " impact, " + p.confidence + " confidence";
       const title = svg("title", {});
-      title.textContent = (p.headline || "").replace("[DEMO] ", "") + " — " + p.impact + " impact, " + p.confidence + " confidence";
-      c.addEventListener("click", () => onPoint(p.id));
+      title.textContent = label;
+      c.setAttribute("role", "button");
+      c.setAttribute("tabindex", "0");
+      c.setAttribute("aria-label", label);
+      const open = () => onPoint(p.id);
+      c.addEventListener("click", open);
+      c.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      });
       g.appendChild(c); g.appendChild(title);
       s.appendChild(g);
     }
     return s;
+  }
+
+  function countryTextAlternative(geo, data, onCountry) {
+    const risk = data.country_risk || {};
+    const names = {};
+    for (const f of geo.features) {
+      if (f.properties.iso) names[f.properties.iso] = f.properties.name;
+    }
+    const order = { Critical: 0, High: 1, Moderate: 2, Low: 3 };
+    const entries = Object.entries(risk)
+      .filter(([iso]) => names[iso])
+      .sort((a, b) => (order[a[1].impact] ?? 9) - (order[b[1].impact] ?? 9)
+                      || b[1].count - a[1].count);
+    if (!entries.length) return h("div");
+
+    const list = h("ul", { class: "map-country-list" }, entries.map(([iso, r]) =>
+      h("li", null, h("button", { class: "linklike", onclick: () => onCountry(iso) },
+        `${names[iso]} — ${r.impact}, ${r.count} development${r.count > 1 ? "s" : ""}`))));
+    const details = h("details", { class: "map-alt" }, [
+      h("summary", null, `Countries with tracked activity (${entries.length})`),
+      list,
+    ]);
+    return details;
   }
 
   function render(data, onPoint, onCountry) {
@@ -122,6 +169,9 @@
     loadGeo().then((geo) => {
       holder.textContent = "";
       holder.appendChild(buildSvg(geo, data, onPoint, onCountry));
+      // Equivalent non-visual route to the same information. A choropleth is
+      // not usable with a screen reader however well each shape is labelled.
+      holder.appendChild(countryTextAlternative(geo, data, onCountry));
     }).catch(() => {
       holder.textContent = "";
       holder.appendChild(C.empty("Could not load map geometry."));
