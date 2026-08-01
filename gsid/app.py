@@ -337,15 +337,17 @@ def create_app(config: Config | None = None) -> Flask:
 
     @app.get("/api/search")
     def search():
+        """Unified search across developments AND the regulatory tracker."""
         q = request.args.get("q", "")
+        regulations = db.search_regulations(get_conn(), q)
         ids = db.search_stories(get_conn(), q, limit=50)
         if not ids:
-            return jsonify({"query": q, "stories": []})
+            return jsonify({"query": q, "stories": [], "regulations": regulations})
         results = repository.list_stories(get_conn(), {"ids": ids}, limit=50)
         # preserve rank order
         order = {sid: i for i, sid in enumerate(ids)}
         results.sort(key=lambda s: order.get(s["id"], 999))
-        return jsonify({"query": q, "stories": results})
+        return jsonify({"query": q, "stories": results, "regulations": regulations})
 
     # ======================================================================
     # Preferences / watchlist

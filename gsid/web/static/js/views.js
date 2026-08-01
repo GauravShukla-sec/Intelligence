@@ -1239,10 +1239,25 @@
     const q = params.q || "";
     mount(node, async () => {
       const data = await API.search(q);
+      const regs = data.regulations || [];
+      const total = data.stories.length + regs.length;
       const wrap = h("div");
-      wrap.appendChild(head("Search results", '"' + q + '" · ' + data.stories.length + " matches"));
-      wrap.appendChild(data.stories.length ? h("div", { class: "grid grid-2" }, data.stories.map((s) => C.storyCard(s, openStory)))
-        : C.empty("No matches. Try different keywords."));
+      wrap.appendChild(head("Search results", '"' + q + '" · ' + total + " matches"));
+
+      // Regulations lead: an exact framework match (e.g. "NIS2") is usually
+      // what the searcher wanted, and the tracker used to be unsearchable.
+      if (regs.length) {
+        wrap.appendChild(h("p", { class: "section-title" },
+          "Regulatory tracker (" + regs.length + ")"));
+        wrap.appendChild(h("div", { class: "grid grid-2" }, regs.map(regMini)));
+      }
+      if (data.stories.length) {
+        if (regs.length) wrap.appendChild(h("p", { class: "section-title" },
+          "Developments (" + data.stories.length + ")"));
+        wrap.appendChild(h("div", { class: "grid grid-2" },
+          data.stories.map((s) => C.storyCard(s, openStory))));
+      }
+      if (!total) wrap.appendChild(C.empty("No matches. Try different keywords."));
       return wrap;
     });
     return node;

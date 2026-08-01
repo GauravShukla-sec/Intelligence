@@ -326,7 +326,10 @@ def search_stories(conn: sqlite3.Connection, query: str, limit: int = 50) -> lis
         tokens = [t for t in _tokenize(q)]
         if not tokens:
             return []
-        match = " OR ".join(f'"{t}"' for t in tokens)
+        # AND, not OR: joining with OR made "zzzz-no-match" match any story
+        # containing "no" or "match", so a nonsense query returned results.
+        # Every term must appear for a hit.
+        match = " AND ".join(f'"{t}"' for t in tokens)
         rows = conn.execute(
             "SELECT story_id FROM story_fts WHERE story_fts MATCH ? "
             "ORDER BY rank LIMIT ?",
@@ -340,6 +343,44 @@ def search_stories(conn: sqlite3.Connection, query: str, limit: int = 50) -> lis
             (like, like, limit),
         ).fetchall()
         return [r["id"] for r in rows]
+
+
+def search_regulations(conn: sqlite3.Connection, query: str,
+                       limit: int = 20) -> list[dict]:
+    """Regulations matching a query.
+
+    The regulatory tracker was invisible to global search — searching "NIS2"
+    returned nothing even though a full NIS2 record existed. Regulations are a
+    small, curated table, so a scan over the searchable columns is enough and
+    avoids a second FTS index to keep in sync.
+    """
+    tokens = _tokenize(query or "")
+    if not tokens:
+        return []
+    cols = ("title", "framework", "jurisdiction", "status", "affected",
+            "obligations", "implications")
+    haystack = " || ' ' || ".join(f"COALESCE({c},'')" for c in cols)
+    # Every token must appear somewhere in the record (AND, as for stories).
+    where = " AND ".join(f"LOWER({haystack}) LIKE ?" for _ in tokens)
+    params = [f"%{t}%" for t in tokens] + [limit]
+    rows = conn.execute(
+        f"SELECT * FROM regulation WHERE {where} ORDER BY updated_at DESC LIMIT ?",
+        params,
+    ).fetchall()
+    out = rows_to_dicts(rows)
+
+    # Rank the record the searcher meant first: several regulations cross-
+    # reference each other (CER and GDPR both mention NIS2), so a bare
+    # relevance-free order buries the exact framework match.
+    def rank(reg: dict) -> tuple:
+        framework = (reg.get("framework") or "").lower()
+        title = (reg.get("title") or "").lower()
+        exact = any(t == framework for t in tokens)
+        in_title = all(t in title for t in tokens)
+        return (0 if exact else 1, 0 if in_title else 1)
+
+    out.sort(key=rank)
+    return out
 
 
 def _tokenize(text: str) -> list[str]:
