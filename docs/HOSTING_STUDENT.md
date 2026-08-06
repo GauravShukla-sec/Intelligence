@@ -44,6 +44,32 @@ laptop is off. Free tier sleeps when idle and wakes on the next visit (~30s).
 Storage is ephemeral on the free plan — fine, because the desk re-seeds demo
 data and re-ingests live feeds automatically.
 
+### Optional: stop the first visit being slow
+
+Render's free tier sleeps after ~15 minutes idle, so the first visit afterwards
+waits ~30–50s for a cold start. A free external pinger keeps it warm.
+
+Use any uptime monitor — **cron-job.org** and **UptimeRobot** both have free
+tiers that are enough:
+
+| Setting  | Value                                  |
+| -------- | -------------------------------------- |
+| URL      | `https://YOUR-APP.onrender.com/api/health` |
+| Interval | every 10 minutes                       |
+| Method   | `GET`, expect HTTP `200`               |
+
+`/api/health` is the right target: it returns a tiny JSON status without
+touching the database, so the ping costs almost nothing but still wakes the
+service.
+
+> **Why not a GitHub Actions cron?** It works, but on a **private** repo every
+> run is billed to your 2,000 free minutes/month, rounded up to the minute —
+> a 10-minute schedule is ~4,320 runs and blows the quota. Runs can also queue
+> for a long time and fail with "job was not acquired by Runner", burning
+> minutes for nothing. An external pinger avoids both and is more reliable.
+
+Skipping this is fine too — the only cost is a slow first load.
+
 ---
 
 ## Always-on free hosting — Hugging Face Spaces

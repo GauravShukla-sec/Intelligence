@@ -98,7 +98,10 @@ def test_requalify_clears_stories_flagged_under_the_old_rule(conn):
     conn.execute("DELETE FROM preference WHERE key='alert_rule_v2'")
     conn.commit()
 
-    db._requalify_alerts(conn)
+    # Pin the clock: the gate has a 7-day recency window, so without this the
+    # fixtures age out and the test starts failing on a date unrelated to any
+    # code change.
+    db._requalify_alerts(conn, now=NOW)
 
     def flagged(sid):
         return conn.execute("SELECT is_alert FROM story WHERE id=?", (sid,)).fetchone()[0]
@@ -108,7 +111,7 @@ def test_requalify_clears_stories_flagged_under_the_old_rule(conn):
     assert flagged("s_weak") == 0
     assert flagged("s_live") == 1
     # Idempotent second pass.
-    assert db._requalify_alerts(conn) == 0
+    assert db._requalify_alerts(conn, now=NOW) == 0
 
 
 def test_alerts_are_ordered_by_newest_event(conn):

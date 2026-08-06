@@ -138,13 +138,17 @@ def _retag_advisories(conn: sqlite3.Connection) -> int:
     return changed
 
 
-def _requalify_alerts(conn: sqlite3.Connection) -> int:
+def _requalify_alerts(conn: sqlite3.Connection, now=None) -> int:
     """Re-apply the alert gate to stories scored under an older, looser rule.
 
     Without this, previously-flagged stories keep is_alert=1 forever — the live
     Critical Alerts page stays full of Level-2 travel advisories and stale
     events. Recomputed from columns already on the row, so no re-analysis is
     needed. Runs whenever the rule version changes.
+
+    `now` overrides the clock so callers (tests) can be deterministic — the
+    alert gate has a recency window, so anything asserting against fixed
+    timestamps silently expires once real time moves past it.
     """
     from .scoring import is_critical_alert
 
@@ -159,7 +163,7 @@ def _requalify_alerts(conn: sqlite3.Connection) -> int:
         want = is_critical_alert(
             r["relevance_score"] or 0, r["urgency"] or "", r["impact"] or "",
             r["confidence"] or "", status=r["status"],
-            event_time=r["event_time"] or r["first_seen"])
+            event_time=r["event_time"] or r["first_seen"], now=now)
         if bool(r["is_alert"]) != want:
             conn.execute("UPDATE story SET is_alert=? WHERE id=?",
                          (1 if want else 0, r["id"]))
