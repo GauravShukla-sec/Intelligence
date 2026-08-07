@@ -190,3 +190,40 @@ def test_tier1_always_relevant_and_noise_is_not():
     assert looks_relevant("Anything at all", tier=1) is True
     assert looks_relevant("Celebrity wedding photos", tier=3) is False
     assert looks_relevant("Ransomware halts plant", tier=3) is True
+
+
+# ---------------------------------------------------------------------------
+# Recall tuning, driven by real misses found in the live "unclassified" pile
+# rather than invented examples. Trade measures and shipping chokepoints were
+# being rejected because a single headline keyword (6) sits under the guarded
+# bar (10); STRONG_KEYWORDS give unambiguous domain markers phrase weight.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("headline", [
+    "Namibia Survives Trump's Sweeping Tariffs",
+    "Donald Trump hits Australian exports to US with new higher trade tariff",
+    "Malaysia's 10% US tariff beats regional rivals, but for how long?",
+    "China vows to defend Brazil's sovereignty as Trump's 25% tariff bites",
+    "Stranded seafarers remain trapped as Hormuz shipping stalls",
+])
+def test_trade_and_chokepoint_stories_are_supply_chain(headline):
+    assert classify(headline).category == "supply_chain"
+
+
+@pytest.mark.parametrize("headline", [
+    # Each of these is a REAL headline that merely looks supply-chain. They are
+    # why "shipping" and "customs" are not strong keywords.
+    "Chinese nationals plead guilty to illegally shipping turtles from US to Hong Kong",
+    "Nigeria: Customs Warns Nigerians Against Fake Recruitment Update",
+    "Metro water supply hit at a few addresses in Mylapore",
+    "Hong Kong high-speed rail link sets record as passenger trips top 16m in 6 months",
+])
+def test_lookalikes_are_still_refused(headline):
+    assert classify(headline).category != "supply_chain"
+
+
+def test_strong_keyword_alone_clears_the_guarded_bar():
+    """One unambiguous marker is enough; an ambiguous one is not."""
+    assert classify("New tariff announced").category == "supply_chain"
+    # "shipping" is deliberately ordinary — needs corroboration.
+    assert classify("Shipping news roundup").category != "supply_chain"

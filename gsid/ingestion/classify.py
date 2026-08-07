@@ -125,6 +125,20 @@ PHRASES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Single words that are as decisive as a phrase: in a headline they essentially
+# only ever mean this domain. Scored at phrase weight so one of them clears the
+# guarded bar on its own. Keep this list *small* and boring — a term earns its
+# place here only if an everyday non-security use is hard to construct.
+# ("shipping"/"customs" deliberately excluded: "shipping turtles" and "Customs
+# warns of fake recruitment" are real headlines that are not supply-chain.)
+STRONG_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "supply_chain": ("tariff", "embargo", "hormuz", "suez", "malacca",
+                     "transshipment", "chokepoint", "demurrage"),
+    "cyber_physical": ("ransomware", "scada", "cve"),
+    "natural_hazard": ("earthquake", "tsunami", "hurricane", "typhoon"),
+    "health": ("ebola", "cholera", "pandemic", "epidemic"),
+}
+
 KEYWORDS: dict[str, tuple[str, ...]] = {
     # NB: no bare "ics", "drone", "breach", "port", "war" — each produced
     # false positives either as a substring or as an everyday word.
@@ -264,11 +278,12 @@ def _compile(terms: Iterable[str]) -> re.Pattern | None:
 
 _PHRASE_RE = {c: _compile(v) for c, v in PHRASES.items()}
 _KEYWORD_RE = {c: _compile(v) for c, v in KEYWORDS.items()}
+_STRONG_RE = {c: _compile(v) for c, v in STRONG_KEYWORDS.items()}
 _NEGATIVE_RE = {r: _compile(v) for r, v in NEGATIVE_RULES.items()}
 _PREPAREDNESS_RE = _compile(PREPAREDNESS_TERMS)
 _ACTIVE_RE = _compile(ACTIVE_IMPACT_TERMS)
 
-ALL_CATEGORIES = sorted(set(PHRASES) | set(KEYWORDS))
+ALL_CATEGORIES = sorted(set(PHRASES) | set(KEYWORDS) | set(STRONG_KEYWORDS))
 
 
 @dataclass
@@ -332,6 +347,10 @@ def classify(headline: str, summary: str = "", body: str = "",
     for cat in ALL_CATEGORIES:
         for term in _scan(headline, _PHRASE_RE.get(cat)):
             add(cat, term, "headline", "phrase", W_HEADLINE_PHRASE)
+        for term in _scan(headline, _STRONG_RE.get(cat)):
+            add(cat, term, "headline", "strong", W_HEADLINE_PHRASE)
+        for term in _scan(summary, _STRONG_RE.get(cat)):
+            add(cat, term, "summary", "strong", W_SUMMARY_PHRASE)
         for term in _scan(headline, _KEYWORD_RE.get(cat)):
             add(cat, term, "headline", "keyword", W_HEADLINE_KEYWORD)
         for term in _scan(summary, _PHRASE_RE.get(cat)):
