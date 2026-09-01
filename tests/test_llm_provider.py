@@ -84,3 +84,28 @@ def test_provider_failure_falls_back_to_heuristic(monkeypatch, sample_input):
     res = OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
     assert res is not None
     assert "heuristic" in (res.notes or "").lower()
+
+
+def test_fallback_is_logged_once_not_per_story(monkeypatch, caplog, sample_input):
+    """A misconfigured provider must be visible, but not 200 log lines deep.
+
+    Without a warning, a wrong model name or rejected key looks exactly like
+    never having configured a provider at all.
+    """
+    broken = types.ModuleType("openai")
+
+    def _boom(**kw):
+        raise RuntimeError("model_not_found: no such model")
+    broken.OpenAI = _boom
+    monkeypatch.setitem(sys.modules, "openai", broken)
+
+    analyzer = OpenAIAnalyzer("k", "does-not-exist", "https://api.groq.com/openai/v1")
+    with caplog.at_level("WARNING", logger="gsid.analysis"):
+        for _ in range(5):
+            analyzer.analyze(sample_input)
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1                      # once per run, not per story
+    msg = warnings[0].getMessage()
+    assert "model_not_found" in msg                # the actual cause
+    assert "groq.com" in msg                       # and which endpoint

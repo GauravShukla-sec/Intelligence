@@ -14,9 +14,37 @@ the transport, not the analytical contract.
 from __future__ import annotations
 
 import json
+import logging
 
 from .base import AnalysisInput, AnalysisResult
 from .heuristic import HeuristicAnalyzer
+
+log = logging.getLogger("gsid.analysis")
+
+
+class _FallbackNotice:
+    """Make a silent downgrade visible — once, not 200 times.
+
+    A wrong model name, a rejected key, or a provider that lacks JSON mode
+    fails EVERY call. Without this the desk quietly serves heuristic output
+    while appearing to be model-backed, which is indistinguishable from the
+    provider never having been configured.
+    """
+
+    def __init__(self, provider: str):
+        self.provider = provider
+        self._warned = False
+
+    def __call__(self, exc: Exception) -> None:
+        if self._warned:
+            log.debug("%s analyzer still unavailable: %s", self.provider, exc)
+            return
+        self._warned = True
+        log.warning(
+            "%s analyzer unavailable — falling back to heuristic analysis for "
+            "this run. Check the model name, API key and base URL. Cause: %s",
+            self.provider, exc)
+
 
 _SIGNAL_KEYS = [
     "people_safety", "facility_assets", "operational", "supply_chain",
@@ -133,6 +161,7 @@ class AnthropicAnalyzer:
         self.api_key = api_key
         self.model = model
         self._fallback = HeuristicAnalyzer()
+        self._notice = _FallbackNotice("Anthropic")
 
     def analyze(self, item: AnalysisInput) -> AnalysisResult:
         try:
@@ -149,7 +178,8 @@ class AnthropicAnalyzer:
                 block.text for block in msg.content if getattr(block, "type", "") == "text"
             )
             return _coerce(_extract_json(text), "anthropic", self.model)
-        except Exception:  # pragma: no cover - network/SDK dependent
+        except Exception as exc:  # network/SDK dependent
+            self._notice(exc)
             res = self._fallback.analyze(item)
             res.notes = "Fell back to heuristic analyzer (Anthropic unavailable)."
             return res
@@ -171,6 +201,7 @@ class OpenAIAnalyzer:
         self.model = model
         self.base_url = (base_url or "").strip()
         self._fallback = HeuristicAnalyzer()
+        self._notice = _FallbackNotice(f"OpenAI-compatible ({self.base_url or 'api.openai.com'})")
 
     def analyze(self, item: AnalysisInput) -> AnalysisResult:
         try:
@@ -190,7 +221,8 @@ class OpenAIAnalyzer:
             )
             text = resp.choices[0].message.content or "{}"
             return _coerce(_extract_json(text), "openai", self.model)
-        except Exception:  # pragma: no cover - network/SDK dependent
+        except Exception as exc:  # network/SDK dependent
+            self._notice(exc)
             res = self._fallback.analyze(item)
             res.notes = "Fell back to heuristic analyzer (OpenAI unavailable)."
             return res
