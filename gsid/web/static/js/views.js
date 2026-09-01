@@ -392,7 +392,7 @@
       sel("urgency", "Urgency", meta.scales.urgency.map((v) => ({ value: v, label: v })), true),
       sel("confidence", "Confidence", meta.scales.confidence.map((v) => ({ value: v, label: v })), true),
       sel("trend", "Trend", meta.scales.trend.map((v) => ({ value: v, label: v })), true),
-      sel("sort", "Sort", [{ value: "score", label: "Relevance" }, { value: "recent", label: "Most recent" }, { value: "urgency", label: "Urgency" }]),
+      sel("sort", "Sort", [{ value: "score", label: "Relevance" }, { value: "recent", label: "Most recent" }, { value: "urgency", label: "Urgency" }, { value: "watchlist", label: "Exposure to our watchlist" }]),
       h("label", null, ["New today", h("input", { type: "checkbox", checked: filters.new_today === "1" ? "checked" : null, onchange: (e) => { filters.new_today = e.target.checked ? "1" : ""; refresh(); } })]),
       h("label", null, ["Verified only", h("input", { type: "checkbox", onchange: (e) => { filters.verified_only = e.target.checked ? "1" : ""; refresh(); } })]),
       h("label", null, ["Alerts only", h("input", { type: "checkbox", onchange: (e) => { filters.alerts_only = e.target.checked ? "1" : ""; refresh(); } })]),

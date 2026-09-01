@@ -10,7 +10,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from . import db
+from . import db, watchlist
 from .ingestion.advisory_levels import LEVEL_LABELS as ADVISORY_LEVEL_LABELS
 from .ingestion.dedup import jaccard, signature
 from .taxonomy import (
@@ -115,7 +115,44 @@ def list_stories(conn, filters: dict[str, Any] | None = None,
            f"ORDER BY {order} LIMIT ? OFFSET ?")
     params.extend([limit, offset])
     rows = conn.execute(sql, params).fetchall()
-    return [_story_row_to_summary(r) for r in rows]
+    stories = [_story_row_to_summary(r) for r in rows]
+
+    # Watchlist exposure is computed here, at read time, so it always reflects
+    # the CURRENT watchlist — storing it at ingestion would go stale the moment
+    # preferences change. Deliberately separate from relevance_score, which is
+    # the published objective model.
+    if stories:
+        prefs = load_preferences(conn)
+        watchlist.attach(stories, prefs, _countries_for(conn, [s["id"] for s in stories]))
+        if filters.get("sort") == "watchlist":
+            # Exposure first, objective relevance as the tie-break.
+            stories.sort(key=lambda s: (-s["watchlist"]["score"], -s["relevance_score"]))
+    return stories
+
+
+def load_preferences(conn) -> dict[str, Any]:
+    """Preferences as a plain dict, JSON values decoded."""
+    out: dict[str, Any] = {}
+    for r in conn.execute("SELECT key, value FROM preference").fetchall():
+        try:
+            out[r["key"]] = json.loads(r["value"])
+        except (json.JSONDecodeError, TypeError):
+            out[r["key"]] = r["value"]
+    return out
+
+
+def _countries_for(conn, story_ids: list[str]) -> dict[str, list[str]]:
+    """Tagged countries for many stories in one query (avoids an N+1)."""
+    if not story_ids:
+        return {}
+    ph = ",".join("?" for _ in story_ids)
+    out: dict[str, list[str]] = {}
+    for r in conn.execute(
+        f"SELECT story_id, country FROM story_country WHERE story_id IN ({ph})",
+        story_ids,
+    ).fetchall():
+        out.setdefault(r["story_id"], []).append(r["country"])
+    return out
 
 
 # Near-duplicate coverage of the *same* event (collapse in lists). Tuned to
@@ -231,6 +268,15 @@ def get_story(conn, story_id: str) -> dict | None:
     story["actions"] = db.rows_to_dicts(conn.execute(
         "SELECT action_type, text FROM action WHERE story_id=? ORDER BY ordinal",
         (story_id,)).fetchall())
+    # Same exposure layer on the detail view, plus watchlist-specific lines
+    # prepended to the generated "why this matters to your work" list.
+    prefs = load_preferences(conn)
+    story["watchlist"] = watchlist.match(story, prefs, story.get("countries"))
+    if story["watchlist"]["reasons"]:
+        a = story.get("analysis") or {}
+        a["why_your_work"] = (story["watchlist"]["reasons"]
+                              + list(a.get("why_your_work") or []))
+        story["analysis"] = a
     story["alert"] = _alert(conn, story_id)
     story["regulation"] = _regulation_for_story(conn, story_id)
     story["similar"] = related_stories(conn, story_id)

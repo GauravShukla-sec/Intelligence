@@ -84,6 +84,10 @@
       impactChip(s.impact),
       confChip(s.confidence),
       s.is_alert ? chip("Alert", "sev-critical", "▲") : null,
+      // Exposure to the desk's own watchlist — distinct from the objective
+      // relevance score shown in the ring.
+      (s.watchlist && s.watchlist.score)
+        ? chip("On our watchlist", "sev-moderate", "◉") : null,
     ]);
     const card = h("article", { class: "story-card", tabindex: "0", role: "button", "aria-label": s.headline,
       onclick: () => onOpen(s.id),
