@@ -61,6 +61,15 @@ class IngestionScheduler:
             db.audit(conn, "scheduler", "scheduled_ingest", detail=result)
             conn.commit()
             log.info("scheduled ingestion complete: %s", result)
+            # Push anything newly alert-worthy. Failure here must not affect
+            # the ingestion that already succeeded.
+            try:
+                from .notify import notify_new_alerts
+                sent = notify_new_alerts(conn, self.config)
+                if sent.get("sent"):
+                    log.info("webhook digest sent: %s alerts", sent.get("alerts"))
+            except Exception:
+                log.exception("webhook notification failed")
         except Exception:  # a failed cycle must never kill the thread
             log.exception("scheduled ingestion cycle failed")
         finally:

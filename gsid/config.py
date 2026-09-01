@@ -86,6 +86,10 @@ class Config:
     # Triggering ingestion is expensive and shared: admin-only by default.
     public_allow_refresh: bool = False
 
+    # Outbound chat webhook (Slack / Discord / Teams incoming webhook URL).
+    # Empty = notifications disabled. Never commit this: it is a bearer secret.
+    webhook_url: str = ""
+
     default_timezone: str = "UTC"
 
     @property
@@ -127,5 +131,6 @@ def load_config(env_file: str | os.PathLike | None = None) -> Config:
         admin_token=(os.environ.get("GSID_ADMIN_TOKEN", "")
                      or os.environ.get("GSID_ACCESS_TOKEN", "")),
         public_allow_refresh=_as_bool(os.environ.get("GSID_PUBLIC_ALLOW_REFRESH"), False),
+        webhook_url=os.environ.get("GSID_WEBHOOK_URL", "").strip(),
         default_timezone=os.environ.get("GSID_DEFAULT_TIMEZONE", "UTC"),
     )

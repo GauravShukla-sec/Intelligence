@@ -29,6 +29,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ingest", action="store_true", help="run one ingestion cycle")
     parser.add_argument("--seed", action="store_true", help="seed demo data and exit")
     parser.add_argument("--reset", action="store_true", help="reset DB then seed demo data")
+    parser.add_argument("--notify", action="store_true",
+                        help="send a webhook digest of new critical alerts and exit")
     parser.add_argument("--reclassify", action="store_true",
                         help="re-run category classification over stored stories")
     parser.add_argument("--reclassify-rollback", action="store_true",
@@ -76,6 +78,19 @@ def main(argv: list[str] | None = None) -> int:
                 log.info("dry run — nothing written. Re-run without --dry-run to apply.")
         conn.close()
         return 0
+
+    if args.notify:
+        from gsid.notify import notify_new_alerts
+        conn = db.connect(config.db_file)
+        db.init_db(conn)
+        if not config.webhook_url:
+            log.error("GSID_WEBHOOK_URL is not set — nothing to send to.")
+            conn.close()
+            return 1
+        result = notify_new_alerts(conn, config)
+        conn.close()
+        log.info("notify result: %s", result)
+        return 0 if result.get("sent") or result.get("reason") == "nothing new" else 1
 
     if args.ingest:
         from gsid.ingestion.pipeline import IngestionPipeline
