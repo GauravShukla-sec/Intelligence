@@ -74,6 +74,9 @@ class Config:
     anthropic_model: str = "claude-sonnet-5"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    # Any OpenAI-compatible endpoint (Groq, Together, OpenRouter, local).
+    # Empty = OpenAI itself. Lets a no-budget deployment use a free tier.
+    openai_base_url: str = ""
 
     auth_enabled: bool = False
     access_token: str = ""
@@ -125,6 +128,7 @@ def load_config(env_file: str | os.PathLike | None = None) -> Config:
         anthropic_model=os.environ.get("GSID_ANTHROPIC_MODEL", "claude-sonnet-5"),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
         openai_model=os.environ.get("GSID_OPENAI_MODEL", "gpt-4o-mini"),
+        openai_base_url=os.environ.get("GSID_OPENAI_BASE_URL", "").strip(),
         auth_enabled=_as_bool(os.environ.get("GSID_AUTH_ENABLED"), False),
         access_token=os.environ.get("GSID_ACCESS_TOKEN", ""),
         public_readonly=_as_bool(os.environ.get("GSID_PUBLIC_READONLY"), False),

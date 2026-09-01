@@ -38,3 +38,17 @@ def client(config):
     app.testing = True
     with app.test_client() as cl:
         yield cl
+
+
+@pytest.fixture()
+def sample_input():
+    """A minimal AnalysisInput for exercising analyzers."""
+    from gsid.analysis.base import AnalysisInput
+
+    return AnalysisInput(
+        headline="Port strike halts container traffic",
+        body="Dock workers began an indefinite strike, stopping container movements.",
+        category="supply_chain",
+        location_text="Rotterdam",
+        countries=["nl"],
+    )

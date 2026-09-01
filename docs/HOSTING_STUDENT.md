@@ -44,6 +44,31 @@ laptop is off. Free tier sleeps when idle and wakes on the next visit (~30s).
 Storage is ephemeral on the free plan — fine, because the desk re-seeds demo
 data and re-ingests live feeds automatically.
 
+### Optional: better analysis for free
+
+By default the desk analyses stories with pure-Python heuristics
+(`GSID_AI_PROVIDER=heuristic`) — no account, no cost, but keyword-level
+judgement. To get model-backed analysis without paying, point the
+OpenAI-compatible provider at a free tier such as Groq:
+
+    GSID_AI_PROVIDER=openai
+    GSID_OPENAI_BASE_URL=https://api.groq.com/openai/v1
+    OPENAI_API_KEY=<your free Groq key>
+    GSID_OPENAI_MODEL=<a model the provider offers>
+
+The same three variables work for any OpenAI-compatible endpoint (OpenRouter,
+Together, or a model you run yourself). Leave `GSID_OPENAI_BASE_URL` unset to
+use OpenAI itself.
+
+Worth knowing before you switch:
+
+* it needs the `openai` package (`pip install openai`);
+* free tiers are rate-limited, so expect some stories to fall back — that is
+  handled, not fatal: any failure degrades to the heuristic analyzer rather
+  than losing the story;
+* story text is sent to whichever provider you configure. Everything ingested
+  is already public reporting, but it does leave your server.
+
 ### Optional: stop the first visit being slow
 
 Render's free tier sleeps after ~15 minutes idle, so the first visit afterwards

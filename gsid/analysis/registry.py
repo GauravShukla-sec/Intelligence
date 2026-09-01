@@ -18,6 +18,7 @@ def get_analyzer(config) -> AnalyzerProtocol:
     if provider == "anthropic" and getattr(config, "anthropic_api_key", ""):
         return AnthropicAnalyzer(config.anthropic_api_key, config.anthropic_model)
     if provider == "openai" and getattr(config, "openai_api_key", ""):
-        return OpenAIAnalyzer(config.openai_api_key, config.openai_model)
+        return OpenAIAnalyzer(config.openai_api_key, config.openai_model,
+                              getattr(config, "openai_base_url", ""))
 
     return HeuristicAnalyzer()

@@ -156,18 +156,30 @@ class AnthropicAnalyzer:
 
 
 class OpenAIAnalyzer:
+    """OpenAI, or any endpoint speaking its chat-completions API.
+
+    `base_url` opens this up to compatible providers — Groq, Together,
+    OpenRouter, or a locally hosted model — so a desk with no budget can still
+    get model-backed analysis instead of keyword heuristics. Leave it empty for
+    OpenAI itself.
+    """
+
     name = "openai"
 
-    def __init__(self, api_key: str, model: str):
+    def __init__(self, api_key: str, model: str, base_url: str = ""):
         self.api_key = api_key
         self.model = model
+        self.base_url = (base_url or "").strip()
         self._fallback = HeuristicAnalyzer()
 
     def analyze(self, item: AnalysisInput) -> AnalysisResult:
         try:
             from openai import OpenAI  # type: ignore
 
-            client = OpenAI(api_key=self.api_key)
+            # Only pass base_url when set: the SDK's default is OpenAI's own
+            # endpoint, and passing an empty string would break it.
+            client = (OpenAI(api_key=self.api_key, base_url=self.base_url)
+                      if self.base_url else OpenAI(api_key=self.api_key))
             resp = client.chat.completions.create(
                 model=self.model,
                 response_format={"type": "json_object"},
