@@ -41,6 +41,13 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # HTTP client libraries log one INFO line per request. With ~650 stories
+    # analysed per run that buries our own diagnostics: a single WARNING about
+    # a rejected API key scrolled past hundreds of "401 Unauthorized" lines,
+    # which is exactly when the operator most needs to see it.
+    for _noisy in ("httpx", "httpx2", "httpcore", "httpcore2", "openai", "anthropic",
+                   "urllib3"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
     config = load_config()
 
     if args.reset:

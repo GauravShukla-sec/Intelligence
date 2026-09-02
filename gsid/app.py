@@ -31,6 +31,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+# HTTP client libraries log one INFO line per request. A scheduled ingestion
+# analyses hundreds of stories, so leaving these at INFO floods the deploy log
+# and buries our own warnings — the ones that say why analysis is failing.
+for _noisy in ("httpx", "httpx2", "httpcore", "httpcore2", "openai", "anthropic",
+               "urllib3"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 log = logging.getLogger("gsid.app")
 
 WEB_DIR = "web"
