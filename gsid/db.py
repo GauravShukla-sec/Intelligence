@@ -32,10 +32,20 @@ def new_id(prefix: str = "") -> str:
     return f"{prefix}{token}" if prefix else token
 
 
+# SQLite allows one writer at a time. Without a busy timeout a concurrent
+# writer fails IMMEDIATELY with "database is locked" rather than waiting for the
+# lock to clear — which happens routinely here: the scheduler ingests while the
+# web process serves a refresh, or a CLI command runs against the same file as
+# the running desk. Waiting briefly turns a hard failure into a short pause.
+BUSY_TIMEOUT_MS = 15_000
+
+
 def connect(db_path: str | Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn = sqlite3.connect(str(db_path), check_same_thread=False,
+                           timeout=BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};")
     return conn
 
 

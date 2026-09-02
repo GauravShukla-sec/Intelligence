@@ -130,6 +130,12 @@ def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = No
                  urgency, geo_scope, impact, likelihood, velocity, confidence, trend,
                  1 if alert else 0, r["id"]))
         updated += 1
+        # Commit per story rather than once at the end. A long run otherwise
+        # holds SQLite's single write lock for its whole duration — blocking the
+        # web process and the scheduler — shows no progress until it finishes,
+        # and loses everything if interrupted.
+        if not dry_run:
+            conn.commit()
         if pause:
             time.sleep(pause)
 
@@ -137,5 +143,7 @@ def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = No
         db.audit(conn, f"ai:{analyzer.name}", "reanalyze_stories",
                  detail={"updated": updated, "failed": failed})
         conn.commit()
+    log.info("re-analysed %d/%d stories (%d skipped after provider failure)",
+             updated, scanned, failed)
     return {"scanned": scanned, "updated": updated, "failed": failed,
             "analyzer": analyzer.name, "dry_run": dry_run}
