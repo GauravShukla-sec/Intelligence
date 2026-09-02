@@ -31,6 +31,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reset", action="store_true", help="reset DB then seed demo data")
     parser.add_argument("--notify", action="store_true",
                         help="send a webhook digest of new critical alerts and exit")
+    parser.add_argument("--reanalyze", action="store_true",
+                        help="re-run the configured analyzer over stored stories")
+    parser.add_argument("--limit", type=int, default=25,
+                        help="max stories to re-analyse (default 25)")
+    parser.add_argument("--only-provider", default="heuristic",
+                        help="re-analyse stories whose stored analysis came from this "
+                             "provider (default: heuristic); empty string for all")
+    parser.add_argument("--pause", type=float, default=0.0,
+                        help="seconds to wait between calls (free-tier rate limits)")
     parser.add_argument("--reclassify", action="store_true",
                         help="re-run category classification over stored stories")
     parser.add_argument("--reclassify-rollback", action="store_true",
@@ -98,6 +107,26 @@ def main(argv: list[str] | None = None) -> int:
         conn.close()
         log.info("notify result: %s", result)
         return 0 if result.get("sent") or result.get("reason") == "nothing new" else 1
+
+    if args.reanalyze:
+        from gsid.analysis.registry import get_analyzer
+        from gsid.reanalyze import reanalyze
+        conn = db.connect(config.db_file)
+        db.init_db(conn)
+        analyzer = get_analyzer(config)
+        if analyzer.name == "heuristic" and config.ai_provider != "heuristic":
+            log.error("provider %r requested but not usable (missing key?) — "
+                      "refusing to re-analyse with the heuristic analyzer.",
+                      config.ai_provider)
+            conn.close()
+            return 1
+        log.info("re-analysing with %s (limit=%d)", analyzer.name, args.limit)
+        result = reanalyze(conn, analyzer, limit=args.limit,
+                           only_provider=(args.only_provider or None),
+                           pause=args.pause, dry_run=args.dry_run)
+        conn.close()
+        log.info("re-analysis result: %s", result)
+        return 0
 
     if args.ingest:
         from gsid.ingestion.pipeline import IngestionPipeline
