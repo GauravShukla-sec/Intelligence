@@ -128,9 +128,20 @@ FEED_REGISTRY: list[FeedDef] = [
     FeedDef("un_news", "UN News — Global", "https://news.un.org/feed/subscribe/en/news/all/rss.xml",
             1, "international_org", "int", region_hint="global", category_hint="geopolitical",
             ownership="United Nations", transparency="Official UN channel"),
+    # DISABLED 2026-09-10. Every ReliefWeb RSS path now answers HTTP 202 with an
+    # empty body (bot protection) — 27 consecutive failures, never one success.
+    # The v1 API is 410 Gone; v2 works but rejects requests without an approved
+    # `appname`, which ReliefWeb issues on request (apidoc.reliefweb.int).
+    # Left in the registry rather than deleted so the provenance record and the
+    # route back are documented: obtain an appname, then re-enable as a JSON
+    # connector. Disaster ALERTS remain covered by GDACS (tier 1); what is lost
+    # is ReliefWeb's humanitarian situation reporting.
     FeedDef("reliefweb", "ReliefWeb — Disasters", "https://reliefweb.int/updates/rss.xml",
             1, "humanitarian", "int", region_hint="global", category_hint="natural_hazard",
-            ownership="UN OCHA"),
+            ownership="UN OCHA",
+            transparency="Disabled: RSS returns HTTP 202 with no body; the v2 API "
+                         "requires an approved appname from ReliefWeb.",
+            enabled_by_default=False),
     FeedDef("who_news", "WHO — News (health emergencies & outbreaks)",
             "https://www.who.int/rss-feeds/news-english.xml",
             1, "international_org", "int", region_hint="global", category_hint="natural_hazard",

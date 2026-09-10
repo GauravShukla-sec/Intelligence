@@ -111,7 +111,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if result.get("sent") or result.get("reason") == "nothing new" else 1
 
     if args.reanalyze:
-        from gsid.analysis.registry import get_analyzer
         from gsid.reanalyze import reanalyze
         conn = db.connect(config.db_file)
         db.init_db(conn)

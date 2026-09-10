@@ -33,7 +33,16 @@ class IngestionPipeline:
         feeds = selected_feeds(self.config.enabled_feeds or None)
         all_items: list[FeedItem] = []
         feed_status: dict[str, int] = {}
+        skipped: list[str] = []
         for feed in feeds:
+            # A persistently dead feed costs a full fetch timeout on EVERY run
+            # (15s each for two of them here) and produces nothing. Skip it,
+            # but re-probe periodically so a feed that comes back is picked up
+            # without anyone editing the registry.
+            if self._is_quarantined(feed):
+                skipped.append(feed.id)
+                feed_status[feed.id] = 0
+                continue
             result = make_connector(feed, self.config.fetch_timeout_seconds).fetch_with_status()
             feed_status[feed.id] = len(result.items)
             all_items.extend(result.items)
@@ -76,6 +85,32 @@ class IngestionPipeline:
         }
         log.info("ingestion run: %s", result)
         return result
+
+    # After this many consecutive failures a feed is considered dead.
+    QUARANTINE_AFTER = 5
+    # ...but re-probe it once every this many runs, so recovery is automatic.
+    QUARANTINE_REPROBE_EVERY = 12
+
+    def _is_quarantined(self, feed) -> bool:
+        row = self.conn.execute(
+            "SELECT consecutive_failures FROM feed_health WHERE feed_id=?",
+            (feed.id,)).fetchone()
+        fails = (row["consecutive_failures"] if row else 0) or 0
+        if fails < self.QUARANTINE_AFTER:
+            return False
+        # Re-probe on a schedule derived from the failure count itself, so no
+        # extra state is needed: every Nth attempt past the threshold retries.
+        if (fails - self.QUARANTINE_AFTER) % self.QUARANTINE_REPROBE_EVERY == 0:
+            log.info("re-probing quarantined feed %s (%d consecutive failures)",
+                     feed.id, fails)
+            return False
+        log.debug("skipping quarantined feed %s (%d consecutive failures)",
+                  feed.id, fails)
+        # Count the skip so the re-probe clock advances.
+        self.conn.execute(
+            "UPDATE feed_health SET consecutive_failures=?, last_run=? WHERE feed_id=?",
+            (fails + 1, utcnow(), feed.id))
+        return True
 
     def _record_health(self, feed, result) -> None:
         """Persist per-feed outcome for the Settings feed-health indicator."""
