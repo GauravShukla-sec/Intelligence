@@ -73,17 +73,119 @@ def test_base_url_is_omitted_when_empty(monkeypatch, sample_input):
 
 
 def test_provider_failure_falls_back_to_heuristic(monkeypatch, sample_input):
-    """Free tiers rate-limit; a refused call must degrade, not crash."""
+    """A refused call must degrade, not crash."""
     broken = types.ModuleType("openai")
 
     def _boom(**kw):
-        raise RuntimeError("429 rate limit exceeded")
+        raise RuntimeError("400 bad request")
     broken.OpenAI = _boom
     monkeypatch.setitem(sys.modules, "openai", broken)
 
     res = OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
     assert res is not None
     assert "heuristic" in (res.notes or "").lower()
+
+
+# ---- rate limiting: wait and resend, don't discard the story ---------------
+
+def _rate_limited_then(results, captured_sleeps):
+    """openai stand-in that raises 429 until `results` yields a success."""
+    mod = types.ModuleType("openai")
+    state = {"calls": 0}
+
+    class _Client:
+        def __init__(self, **kw):
+            state["calls"] += 1
+            if state["calls"] <= results:
+                raise RuntimeError("Error code: 429 - rate limit reached")
+            msg = types.SimpleNamespace(content='{"what_happened": "model output"}')
+            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(
+                create=lambda **_: types.SimpleNamespace(
+                    choices=[types.SimpleNamespace(message=msg)])))
+
+    mod.OpenAI = _Client
+    return mod, state
+
+
+def test_rate_limit_is_waited_out_and_the_story_succeeds(monkeypatch, sample_input):
+    """The whole point of B: a 429 costs time, not the story."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod, state = _rate_limited_then(2, sleeps)
+    monkeypatch.setitem(sys.modules, "openai", mod)
+
+    res = OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
+
+    assert res.provider == "openai"          # not a heuristic fallback
+    assert state["calls"] == 3               # two refusals, then success
+    assert len(sleeps) == 2 and all(s > 0 for s in sleeps)
+
+
+def test_backoff_grows_between_attempts(monkeypatch, sample_input):
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod, _ = _rate_limited_then(3, sleeps)
+    monkeypatch.setitem(sys.modules, "openai", mod)
+    OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
+    assert sleeps == sorted(sleeps) and sleeps[-1] > sleeps[0]
+
+
+def test_rate_limit_eventually_gives_up_and_falls_back(monkeypatch, sample_input):
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod, state = _rate_limited_then(99, sleeps)      # never recovers
+    monkeypatch.setitem(sys.modules, "openai", mod)
+
+    a = OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1", rate_limit_retries=3)
+    res = a.analyze(sample_input)
+
+    assert "heuristic" in (res.notes or "").lower()
+    assert state["calls"] == 4                       # initial + 3 retries
+    assert len(sleeps) == 3                          # bounded, not infinite
+
+
+def test_non_rate_limit_errors_are_not_retried(monkeypatch, sample_input):
+    """Retrying a bad model name would only burn the clock."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    broken = types.ModuleType("openai")
+    state = {"calls": 0}
+
+    def _boom(**kw):
+        state["calls"] += 1
+        raise RuntimeError("model_not_found: no such model")
+    broken.OpenAI = _boom
+    monkeypatch.setitem(sys.modules, "openai", broken)
+
+    OpenAIAnalyzer("k", "nope", "https://api.groq.com/openai/v1").analyze(sample_input)
+
+    assert state["calls"] == 1 and sleeps == []
+
+
+def test_server_suggested_wait_is_honoured(monkeypatch, sample_input):
+    """Groq sends its own reset hint; prefer it over our guess."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod = types.ModuleType("openai")
+    state = {"calls": 0}
+
+    class _Client:
+        def __init__(self, **kw):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                exc = RuntimeError("429 too many requests")
+                exc.response = types.SimpleNamespace(headers={"retry-after": "3.5"})
+                raise exc
+            msg = types.SimpleNamespace(content='{"what_happened": "ok"}')
+            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(
+                create=lambda **_: types.SimpleNamespace(
+                    choices=[types.SimpleNamespace(message=msg)])))
+
+    mod.OpenAI = _Client
+    monkeypatch.setitem(sys.modules, "openai", mod)
+
+    OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
+    assert sleeps == [3.5]
 
 
 def test_fallback_is_logged_once_not_per_story(monkeypatch, caplog, sample_input):

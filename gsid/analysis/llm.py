@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 
 from .base import AnalysisInput, AnalysisResult
 from .heuristic import HeuristicAnalyzer
@@ -44,6 +45,43 @@ class _FallbackNotice:
             "%s analyzer unavailable — falling back to heuristic analysis for "
             "this run. Check the model name, API key and base URL. Cause: %s",
             self.provider, exc)
+
+
+# Free tiers meter by tokens-per-minute, so a bulk run hits the limit
+# constantly. A rate limit is TRANSIENT — the right response is to wait and
+# resend the same story. Treating it like a permanent failure (as this module
+# used to) threw away roughly a quarter of a real 83-story run: each refusal
+# spent a request from the daily allowance and produced nothing.
+RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_BACKOFF_SECONDS = 8.0
+RATE_LIMIT_MAX_WAIT = 90.0
+
+
+def _is_rate_limit(exc: Exception) -> bool:
+    """True for a 429 / quota error, whatever SDK shape it arrives in."""
+    if getattr(exc, "status_code", None) == 429:
+        return True
+    if type(exc).__name__ in ("RateLimitError", "APIStatusError") and "429" in str(exc):
+        return True
+    text = str(exc).lower()
+    return "rate limit" in text or "429" in text or "too many requests" in text
+
+
+def _retry_after_seconds(exc: Exception) -> float | None:
+    """The server's own suggested wait, when it sends one."""
+    resp = getattr(exc, "response", None)
+    headers = getattr(resp, "headers", None)
+    if not headers:
+        return None
+    for key in ("retry-after", "x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+        raw = headers.get(key)
+        if not raw:
+            continue
+        try:
+            return min(float(str(raw).rstrip("s")), RATE_LIMIT_MAX_WAIT)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 _SIGNAL_KEYS = [
@@ -196,33 +234,52 @@ class OpenAIAnalyzer:
 
     name = "openai"
 
-    def __init__(self, api_key: str, model: str, base_url: str = ""):
+    def __init__(self, api_key: str, model: str, base_url: str = "",
+                 rate_limit_retries: int = RATE_LIMIT_RETRIES):
         self.api_key = api_key
         self.model = model
         self.base_url = (base_url or "").strip()
+        self.rate_limit_retries = max(0, int(rate_limit_retries))
+        self.provider_label = self.base_url or "api.openai.com"
         self._fallback = HeuristicAnalyzer()
-        self._notice = _FallbackNotice(f"OpenAI-compatible ({self.base_url or 'api.openai.com'})")
+        self._notice = _FallbackNotice(f"OpenAI-compatible ({self.provider_label})")
 
     def analyze(self, item: AnalysisInput) -> AnalysisResult:
-        try:
-            from openai import OpenAI  # type: ignore
+        # A rate limit gets waited out and retried; anything else falls back
+        # immediately. Retrying a bad model name or a rejected key would just
+        # burn the clock, and retrying nothing at all wastes the request.
+        for attempt in range(self.rate_limit_retries + 1):
+            try:
+                from openai import OpenAI  # type: ignore
 
-            # Only pass base_url when set: the SDK's default is OpenAI's own
-            # endpoint, and passing an empty string would break it.
-            client = (OpenAI(api_key=self.api_key, base_url=self.base_url)
-                      if self.base_url else OpenAI(api_key=self.api_key))
-            resp = client.chat.completions.create(
-                model=self.model,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": _build_user_prompt(item)},
-                ],
-            )
-            text = resp.choices[0].message.content or "{}"
-            return _coerce(_extract_json(text), "openai", self.model)
-        except Exception as exc:  # network/SDK dependent
-            self._notice(exc)
-            res = self._fallback.analyze(item)
-            res.notes = "Fell back to heuristic analyzer (OpenAI unavailable)."
-            return res
+                # Only pass base_url when set: the SDK's default is OpenAI's own
+                # endpoint, and passing an empty string would break it.
+                # max_retries=0 keeps retry policy here, in one place, instead
+                # of the SDK also retrying 429s on its own short backoff.
+                kwargs = {"api_key": self.api_key, "max_retries": 0}
+                if self.base_url:
+                    kwargs["base_url"] = self.base_url
+                client = OpenAI(**kwargs)
+                resp = client.chat.completions.create(
+                    model=self.model,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": _SYSTEM},
+                        {"role": "user", "content": _build_user_prompt(item)},
+                    ],
+                )
+                text = resp.choices[0].message.content or "{}"
+                return _coerce(_extract_json(text), "openai", self.model)
+            except Exception as exc:  # network/SDK dependent
+                if _is_rate_limit(exc) and attempt < self.rate_limit_retries:
+                    wait = _retry_after_seconds(exc) or (
+                        RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))
+                    log.info("rate limited by %s; waiting %.1fs then retrying "
+                             "(attempt %d/%d)", self.provider_label, wait,
+                             attempt + 1, self.rate_limit_retries)
+                    time.sleep(wait)
+                    continue
+                self._notice(exc)
+                res = self._fallback.analyze(item)
+                res.notes = "Fell back to heuristic analyzer (OpenAI unavailable)."
+                return res
