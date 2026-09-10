@@ -52,7 +52,7 @@ def _sources_for(conn, story_id: str) -> list[SourceRef]:
 
 def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = None,
               category: str | None = None, pause: float = 0.0,
-              dry_run: bool = False) -> dict:
+              dry_run: bool = False, max_seconds: float = 0.0) -> dict:
     """Re-analyse up to `limit` stories with `analyzer`.
 
     `only_provider` selects stories whose stored analysis came from a given
@@ -75,7 +75,17 @@ def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = No
         f"ORDER BY relevance_score DESC LIMIT ?", (*params, limit)).fetchall()
 
     scanned = updated = failed = 0
+    started = time.monotonic()
+    stopped_early = None
     for r in rows:
+        # Wall-clock budget. Throughput depends on the provider's rate limit,
+        # so "how many stories" is a poor proxy for "how long this will run" —
+        # an unattended job needs a bound in time, not just in count.
+        if max_seconds and (time.monotonic() - started) >= max_seconds:
+            stopped_early = "time budget reached"
+            log.info("stopping: %.0fs budget reached after %d updated",
+                     max_seconds, updated)
+            break
         scanned += 1
         countries = [c["country"] for c in conn.execute(
             "SELECT country FROM story_country WHERE story_id=?", (r["id"],)).fetchall()]
@@ -93,6 +103,7 @@ def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = No
             # remaining story would fail the same way. Stop now so the run
             # ends in seconds instead of grinding through the whole batch.
             if getattr(analyzer, "quota_exhausted", False):
+                stopped_early = "provider quota exhausted"
                 log.warning("stopping early: provider quota exhausted after "
                             "%d updated, %d failed", updated, failed)
                 break
@@ -153,4 +164,6 @@ def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = No
     log.info("re-analysed %d/%d stories (%d skipped after provider failure)",
              updated, scanned, failed)
     return {"scanned": scanned, "updated": updated, "failed": failed,
-            "analyzer": analyzer.name, "dry_run": dry_run}
+            "analyzer": analyzer.name, "dry_run": dry_run,
+            "elapsed_seconds": round(time.monotonic() - started, 1),
+            "stopped_early": stopped_early}

@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
                              "provider (default: heuristic); empty string for all")
     parser.add_argument("--pause", type=float, default=0.0,
                         help="seconds to wait between calls (free-tier rate limits)")
+    parser.add_argument("--max-seconds", type=float, default=0.0,
+                        help="stop re-analysing after this many seconds (0 = no limit)")
     parser.add_argument("--reclassify", action="store_true",
                         help="re-run category classification over stored stories")
     parser.add_argument("--reclassify-rollback", action="store_true",
@@ -123,7 +125,8 @@ def main(argv: list[str] | None = None) -> int:
         log.info("re-analysing with %s (limit=%d)", analyzer.name, args.limit)
         result = reanalyze(conn, analyzer, limit=args.limit,
                            only_provider=(args.only_provider or None),
-                           pause=args.pause, dry_run=args.dry_run)
+                           pause=args.pause, dry_run=args.dry_run,
+                           max_seconds=args.max_seconds)
         conn.close()
         log.info("re-analysis result: %s", result)
         return 0

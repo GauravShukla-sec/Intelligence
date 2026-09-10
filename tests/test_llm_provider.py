@@ -304,3 +304,34 @@ def test_waits_are_capped(monkeypatch, sample_input):
     OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1",
                    rate_limit_retries=20).analyze(sample_input)
     assert max(sleeps) <= RATE_LIMIT_MAX_WAIT
+
+
+def test_per_day_quota_is_read_from_the_error_message(monkeypatch, sample_input):
+    """A tokens-per-day limit arrives as prose with no matching header.
+
+    Real Groq response: "... on tokens per day (TPD): Limit 200000, Used
+    199704 ... Please try again in 15m40.464s". Header-only parsing missed it,
+    so the run retried five times against a quota with 15 minutes left.
+    """
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    broken = types.ModuleType("openai")
+    state = {"calls": 0}
+
+    def _boom(**kw):
+        state["calls"] += 1
+        raise RuntimeError(
+            "Error code: 429 - {'error': {'message': 'Rate limit reached for "
+            "model `openai/gpt-oss-120b` ... on tokens per day (TPD): Limit "
+            "200000, Used 199704, Requested 2473. Please try again in "
+            "15m40.464s. Need more tokens? Upgrade to Dev Tier'}}")
+    broken.OpenAI = _boom
+    monkeypatch.setitem(sys.modules, "openai", broken)
+
+    a = OpenAIAnalyzer("k", "openai/gpt-oss-120b", "https://api.groq.com/openai/v1")
+    res = a.analyze(sample_input)
+
+    assert a.quota_exhausted is True
+    assert state["calls"] == 1        # no pointless retries
+    assert sleeps == []               # and no stalling
+    assert "quota exhausted" in (res.notes or "").lower()

@@ -83,7 +83,9 @@ def _parse_duration(raw: str) -> float | None:
     """
     if raw is None:
         return None
-    text = str(raw).strip().lower()
+    # Trailing punctuation is common when the value comes from prose
+    # ("try again in 15m40.464s."), and would otherwise fail the anchored match.
+    text = str(raw).strip().lower().rstrip(".,;:")
     if not text:
         return None
     try:                                   # bare seconds, e.g. retry-after: 30
@@ -101,23 +103,43 @@ def _parse_duration(raw: str) -> float | None:
         return None
 
 
+_TRY_AGAIN_RE = re.compile(r"try again in\s+([\dhms.]+)", re.IGNORECASE)
+
+
 def _retry_after_seconds(exc: Exception) -> float | None:
     """The server's own suggested wait, when it sends one.
 
     Prefers the token window: on a tokens-per-minute limit that is the value
     that actually clears, and it is usually far shorter than the request-window
     reset.
+
+    Falls back to the wait quoted in the error MESSAGE. A per-day token limit
+    arrives as prose — "Please try again in 15m40.464s" — with no matching
+    header, so header-only parsing missed it entirely and the caller retried
+    five times against a quota that had hours left to run.
     """
     resp = getattr(exc, "response", None)
-    headers = getattr(resp, "headers", None)
-    if not headers:
-        return None
-    for key in ("x-ratelimit-reset-tokens", "retry-after",
-                "x-ratelimit-reset-requests"):
+    headers = getattr(resp, "headers", None) or {}
+    candidates: list[float] = []
+    # NB: x-ratelimit-reset-requests is deliberately NOT consulted. It is a
+    # window clock, not a wait instruction — it reads "36m0s" even with 975 of
+    # 1000 requests still available, so treating it as a wait would make every
+    # per-minute blip look like an exhausted quota.
+    for key in ("x-ratelimit-reset-tokens", "retry-after"):
         secs = _parse_duration(headers.get(key))
         if secs is not None and secs >= 0:
-            return secs
-    return None
+            candidates.append(secs)
+    m = _TRY_AGAIN_RE.search(str(exc))
+    if m:
+        secs = _parse_duration(m.group(1))
+        if secs is not None and secs >= 0:
+            candidates.append(secs)
+    # The LONGEST signal is the binding one. Several limits apply at once
+    # (per-minute, per-day), and on a per-day refusal the headers still report
+    # the short per-minute window while only the message states the real wait —
+    # taking the first value found meant retrying an 8-second pause against a
+    # quota with twelve minutes left.
+    return max(candidates) if candidates else None
 
 
 _SIGNAL_KEYS = [
