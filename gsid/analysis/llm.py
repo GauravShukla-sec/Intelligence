@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 
 from .base import AnalysisInput, AnalysisResult
@@ -67,20 +68,55 @@ def _is_rate_limit(exc: Exception) -> bool:
     return "rate limit" in text or "429" in text or "too many requests" in text
 
 
+_DURATION_RE = re.compile(
+    r"(?:(?P<h>[\d.]+)h)?(?:(?P<m>[\d.]+)m(?!s))?"
+    r"(?:(?P<s>[\d.]+)s)?(?:(?P<ms>[\d.]+)ms)?$")
+
+
+def _parse_duration(raw: str) -> float | None:
+    """Seconds from a Go-style duration or a bare number.
+
+    Groq sends "577ms", "33.787s", "8m38.4s", "36m0s"; HTTP `retry-after` is a
+    bare integer. A naive float(raw.rstrip("s")) parses only two of those and
+    silently mis-handles the rest — which made every wait fall through to the
+    maximum cap, turning a sub-second pause into 90 seconds.
+    """
+    if raw is None:
+        return None
+    text = str(raw).strip().lower()
+    if not text:
+        return None
+    try:                                   # bare seconds, e.g. retry-after: 30
+        return float(text)
+    except ValueError:
+        pass
+    m = _DURATION_RE.match(text)
+    if not m or not any(m.groupdict().values()):
+        return None
+    g = m.groupdict()
+    try:
+        return (float(g["h"] or 0) * 3600 + float(g["m"] or 0) * 60
+                + float(g["s"] or 0) + float(g["ms"] or 0) / 1000)
+    except ValueError:
+        return None
+
+
 def _retry_after_seconds(exc: Exception) -> float | None:
-    """The server's own suggested wait, when it sends one."""
+    """The server's own suggested wait, when it sends one.
+
+    Prefers the token window: on a tokens-per-minute limit that is the value
+    that actually clears, and it is usually far shorter than the request-window
+    reset.
+    """
     resp = getattr(exc, "response", None)
     headers = getattr(resp, "headers", None)
     if not headers:
         return None
-    for key in ("retry-after", "x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
-        raw = headers.get(key)
-        if not raw:
-            continue
-        try:
-            return min(float(str(raw).rstrip("s")), RATE_LIMIT_MAX_WAIT)
-        except (TypeError, ValueError):
-            continue
+    for key in ("x-ratelimit-reset-tokens", "retry-after",
+                "x-ratelimit-reset-requests"):
+        secs = _parse_duration(headers.get(key))
+        if secs is not None and secs >= 0:
+            return secs
     return None
 
 
@@ -241,6 +277,9 @@ class OpenAIAnalyzer:
         self.base_url = (base_url or "").strip()
         self.rate_limit_retries = max(0, int(rate_limit_retries))
         self.provider_label = self.base_url or "api.openai.com"
+        # Set when the provider reports a longer-window quota is spent, so a
+        # bulk caller can stop cleanly instead of retrying every story.
+        self.quota_exhausted = False
         self._fallback = HeuristicAnalyzer()
         self._notice = _FallbackNotice(f"OpenAI-compatible ({self.provider_label})")
 
@@ -271,14 +310,36 @@ class OpenAIAnalyzer:
                 text = resp.choices[0].message.content or "{}"
                 return _coerce(_extract_json(text), "openai", self.model)
             except Exception as exc:  # network/SDK dependent
-                if _is_rate_limit(exc) and attempt < self.rate_limit_retries:
-                    wait = _retry_after_seconds(exc) or (
-                        RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1))
-                    log.info("rate limited by %s; waiting %.1fs then retrying "
-                             "(attempt %d/%d)", self.provider_label, wait,
-                             attempt + 1, self.rate_limit_retries)
-                    time.sleep(wait)
-                    continue
+                if _is_rate_limit(exc):
+                    suggested = _retry_after_seconds(exc)
+                    # A long suggested wait means a longer-window quota (per
+                    # hour or per day) is spent, not a per-minute blip. Sleeping
+                    # through that would stall for minutes per story and still
+                    # fail, so stop and let the caller come back later.
+                    if suggested is not None and suggested > RATE_LIMIT_MAX_WAIT:
+                        self.quota_exhausted = True
+                        log.warning(
+                            "%s quota exhausted — provider asks for %.0fs. "
+                            "Stopping rather than stalling; re-run later to "
+                            "continue where this left off.",
+                            self.provider_label, suggested)
+                        res = self._fallback.analyze(item)
+                        res.notes = "Provider quota exhausted; kept heuristic analysis."
+                        return res
+                    if attempt < self.rate_limit_retries:
+                        # The server hint RAISES the wait, never lowers it. A
+                        # token-bucket reset can read "577ms" while being far
+                        # too short to accumulate the ~2k tokens one story
+                        # needs — obeying it literally retried five times in
+                        # under a second and burned five requests for nothing.
+                        wait = min(RATE_LIMIT_MAX_WAIT,
+                                   max(suggested or 0.0,
+                                       RATE_LIMIT_BACKOFF_SECONDS * (attempt + 1)))
+                        log.info("rate limited by %s; waiting %.1fs then retrying "
+                                 "(attempt %d/%d)", self.provider_label, wait,
+                                 attempt + 1, self.rate_limit_retries)
+                        time.sleep(wait)
+                        continue
                 self._notice(exc)
                 res = self._fallback.analyze(item)
                 res.notes = "Fell back to heuristic analyzer (OpenAI unavailable)."

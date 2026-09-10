@@ -89,6 +89,13 @@ def reanalyze(conn, analyzer, *, limit: int = 25, only_provider: str | None = No
         # stored analysis with that would be a regression, so skip instead.
         if getattr(ai, "provider", "") in ("", "heuristic") and analyzer.name != "heuristic":
             failed += 1
+            # If the provider reported a spent hourly/daily quota, every
+            # remaining story would fail the same way. Stop now so the run
+            # ends in seconds instead of grinding through the whole batch.
+            if getattr(analyzer, "quota_exhausted", False):
+                log.warning("stopping early: provider quota exhausted after "
+                            "%d updated, %d failed", updated, failed)
+                break
             continue
 
         breakdown = score_relevance(ai.signals)

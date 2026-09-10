@@ -163,7 +163,7 @@ def test_non_rate_limit_errors_are_not_retried(monkeypatch, sample_input):
 
 
 def test_server_suggested_wait_is_honoured(monkeypatch, sample_input):
-    """Groq sends its own reset hint; prefer it over our guess."""
+    """A hint LONGER than our backoff floor is obeyed exactly."""
     sleeps: list[float] = []
     monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
     mod = types.ModuleType("openai")
@@ -174,7 +174,7 @@ def test_server_suggested_wait_is_honoured(monkeypatch, sample_input):
             state["calls"] += 1
             if state["calls"] == 1:
                 exc = RuntimeError("429 too many requests")
-                exc.response = types.SimpleNamespace(headers={"retry-after": "3.5"})
+                exc.response = types.SimpleNamespace(headers={"retry-after": "45"})
                 raise exc
             msg = types.SimpleNamespace(content='{"what_happened": "ok"}')
             self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(
@@ -185,7 +185,7 @@ def test_server_suggested_wait_is_honoured(monkeypatch, sample_input):
     monkeypatch.setitem(sys.modules, "openai", mod)
 
     OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
-    assert sleeps == [3.5]
+    assert sleeps == [45.0]
 
 
 def test_fallback_is_logged_once_not_per_story(monkeypatch, caplog, sample_input):
@@ -211,3 +211,96 @@ def test_fallback_is_logged_once_not_per_story(monkeypatch, caplog, sample_input
     msg = warnings[0].getMessage()
     assert "model_not_found" in msg                # the actual cause
     assert "groq.com" in msg                       # and which endpoint
+
+
+# ---- duration parsing: Groq sends Go-style durations, not bare seconds -----
+
+import pytest
+from gsid.analysis.llm import _parse_duration, RATE_LIMIT_MAX_WAIT
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("33.787s", 33.787),      # seconds
+    ("577ms", 0.577),         # milliseconds — the case that broke
+    ("8m38.4s", 518.4),       # minutes + seconds
+    ("36m0s", 2160.0),
+    ("1h2m3s", 3723.0),
+    ("30", 30.0),             # bare HTTP retry-after
+    ("", None),
+    (None, None),
+    ("garbage", None),
+])
+def test_duration_formats_all_parse(raw, expected):
+    got = _parse_duration(raw)
+    if expected is None:
+        assert got is None
+    else:
+        assert got == pytest.approx(expected)
+
+
+def test_short_token_window_is_waited_not_capped(monkeypatch, sample_input):
+    """A sub-second reset must not become a 90s stall (the original bug)."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod = types.ModuleType("openai")
+    state = {"calls": 0}
+
+    class _Client:
+        def __init__(self, **kw):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                exc = RuntimeError("429 rate limit")
+                exc.response = types.SimpleNamespace(
+                    headers={"x-ratelimit-reset-tokens": "577ms",
+                             "x-ratelimit-reset-requests": "36m0s"})
+                raise exc
+            msg = types.SimpleNamespace(content='{"what_happened": "ok"}')
+            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(
+                create=lambda **_: types.SimpleNamespace(
+                    choices=[types.SimpleNamespace(message=msg)])))
+
+    mod.OpenAI = _Client
+    monkeypatch.setitem(sys.modules, "openai", mod)
+
+    res = OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1").analyze(sample_input)
+
+    assert res.provider == "openai"
+    # The 36-minute request window is ignored, and the sub-second token hint is
+    # raised to the backoff floor: too short a wait cannot refill the bucket.
+    assert len(sleeps) == 1
+    assert 0.577 < sleeps[0] <= RATE_LIMIT_MAX_WAIT
+
+
+def test_long_wait_stops_instead_of_stalling(monkeypatch, sample_input):
+    """An hourly/daily quota must end the run, not sleep through it."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod = types.ModuleType("openai")
+
+    class _Client:
+        def __init__(self, **kw):
+            exc = RuntimeError("429 rate limit")
+            exc.response = types.SimpleNamespace(
+                headers={"x-ratelimit-reset-tokens": "36m0s"})
+            raise exc
+
+    mod.OpenAI = _Client
+    monkeypatch.setitem(sys.modules, "openai", mod)
+
+    a = OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1")
+    res = a.analyze(sample_input)
+
+    assert a.quota_exhausted is True
+    assert sleeps == []                      # no stalling
+    assert "quota exhausted" in (res.notes or "").lower()
+
+
+def test_waits_are_capped(monkeypatch, sample_input):
+    """Without a server hint, backoff must never exceed the cap."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("gsid.analysis.llm.time.sleep", lambda s: sleeps.append(s))
+    mod, _ = _rate_limited_then(99, sleeps)
+    monkeypatch.setitem(sys.modules, "openai", mod)
+    OpenAIAnalyzer("k", "m", "https://api.groq.com/openai/v1",
+                   rate_limit_retries=20).analyze(sample_input)
+    assert max(sleeps) <= RATE_LIMIT_MAX_WAIT

@@ -114,3 +114,22 @@ def test_heuristic_analyzer_is_allowed_to_rewrite(conn):
     conn.commit()
     res = reanalyze(conn, HeuristicAnalyzer(), limit=5, only_provider=None)
     assert res["updated"] == 1 and res["failed"] == 0
+
+
+def test_run_stops_early_when_provider_quota_is_exhausted(conn):
+    """Every remaining story would fail identically — stop, don't grind."""
+    conn.execute("DELETE FROM story")
+    for i in range(6):
+        _story(conn, f"s{i}")
+    conn.commit()
+
+    class _Spent(_StubLLM):
+        def __init__(self):
+            super().__init__(provider="heuristic")   # fallback output
+            self.quota_exhausted = True
+
+    spent = _Spent()
+    res = reanalyze(conn, spent, limit=6)
+
+    assert spent.calls == 1        # gave up after the first refusal
+    assert res["updated"] == 0 and res["failed"] == 1
