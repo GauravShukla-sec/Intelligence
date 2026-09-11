@@ -100,3 +100,21 @@ def test_cli_ingest_branch_can_resolve_the_analyzer():
     assert not shadowed, (
         "get_analyzer is imported at module level; importing it inside main() "
         "shadows it for every branch and breaks --ingest")
+
+
+def test_maritime_feeds_are_enabled_and_target_supply_chain():
+    """Supply-Chain was the thinnest page; these were added to feed it."""
+    from gsid.ingestion.connectors import selected_feeds
+    ids = {f.id: f for f in selected_feeds(None)}
+    for fid in ("gcaptain", "splash247"):
+        assert fid in ids, f"{fid} should be enabled"
+        assert ids[fid].category_hint == "supply_chain"
+
+
+def test_maritime_executive_was_deliberately_not_added():
+    """Rejected on content, not availability: ~80 items of commercial news.
+
+    Documented so nobody 'helpfully' adds it later for the item count.
+    """
+    from gsid.ingestion.connectors import FEED_REGISTRY
+    assert not any("maritime-executive" in f.url for f in FEED_REGISTRY)

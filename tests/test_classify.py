@@ -227,3 +227,30 @@ def test_strong_keyword_alone_clears_the_guarded_bar():
     assert classify("New tariff announced").category == "supply_chain"
     # "shipping" is deliberately ordinary — needs corroboration.
     assert classify("Shipping news roundup").category != "supply_chain"
+
+
+# ---- maritime vocabulary (added with the gCaptain / Splash247 feeds) -------
+
+@pytest.mark.parametrize("headline", [
+    "Hormuz Shipping Traffic Falls to Single Digits, Data Shows",
+    "Houthis Seize Mocha, Tightening Grip on Bab el-Mandeb",
+    "Houthis advance towards Bab al-Mandab with capture of Mokha",
+    "Vessel seizure reported in the Gulf of Aden",
+    "Suez Canal transits down sharply",
+])
+def test_chokepoint_disruption_is_supply_chain(headline):
+    """Shipping disruption is reported in chokepoint names, not 'supply chain'."""
+    r = classify(headline, feed_id="gcaptain", feed_hint="supply_chain")
+    assert r.category in ("supply_chain", "geopolitical"), (headline, r.category)
+
+
+@pytest.mark.parametrize("headline", [
+    "JAXPORT Names Incoming Chief Commercial Officer",
+    "Onex linked to record $200m VLCC deal",
+    "X1 Wind Accelerates Commercialization of its Floating Wind Technology",
+    "bound4blue Secures Bureau Veritas Design Assessment",
+])
+def test_maritime_commercial_news_is_not_a_disruption(headline):
+    """Trade press carries personnel and product news; that is not security."""
+    r = classify(headline, feed_id="gcaptain", feed_hint="supply_chain")
+    assert r.category != "supply_chain", (headline, r.category)

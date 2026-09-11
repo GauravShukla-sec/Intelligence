@@ -118,6 +118,27 @@ FEED_REGISTRY: list[FeedDef] = [
             2, "newspaper", "in", region_hint="south_asia", category_hint="geopolitical"),
     FeedDef("scmp", "South China Morning Post", "https://www.scmp.com/rss/91/feed",
             2, "newspaper", "hk", region_hint="east_asia", category_hint="geopolitical"),
+    # Maritime trade press. Added 2026-09-11 because the Supply-Chain page was
+    # the thinnest on the desk (35 stories) while chokepoint disruption is core
+    # to it. Chosen on CONTENT, not volume: Maritime Executive was also tested
+    # and returns ~80 items, but they are largely commercial trade news
+    # ("JAXPORT Names Chief Commercial Officer"), whereas these two lead with
+    # disruption and security ("Hormuz Shipping Traffic Falls to Single Digits",
+    # "Houthis advance towards Bab al-Mandab"). Tier 3: specialist trade press,
+    # useful for early signal but to be corroborated before acting.
+    FeedDef("gcaptain", "gCaptain — Maritime News", "https://gcaptain.com/feed/",
+            3, "trade_press", "us", region_hint="global",
+            category_hint="supply_chain",
+            ownership="gCaptain (independent maritime publisher, US)",
+            transparency="Specialist maritime trade press. Strong on chokepoint "
+                         "and vessel-incident reporting; commercial coverage mixed in."),
+    FeedDef("splash247", "Splash247 — Shipping News", "https://splash247.com/feed/",
+            3, "trade_press", "sg", region_hint="asia_pacific",
+            category_hint="supply_chain",
+            ownership="Asia Shipping Media (Singapore)",
+            transparency="Singapore-based shipping trade press. Non-Western "
+                         "editorial base, which partly offsets the desk's "
+                         "Western source concentration."),
     FeedDef("batimes", "Buenos Aires Times", "https://www.batimes.com.ar/feed",
             3, "newspaper", "ar", region_hint="latam_caribbean", category_hint="geopolitical"),
     FeedDef("allafrica", "AllAfrica — Latest", "https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf",

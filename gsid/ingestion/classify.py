@@ -82,6 +82,12 @@ PHRASES: dict[str, tuple[str, ...]] = {
         "container ship", "freight rate", "cargo theft", "customs delay",
         "border crossing", "trade route", "logistics disruption", "shipping route",
         "export control", "port strike", "vessel rerouting", "transport corridor",
+        # Maritime chokepoints, added with the maritime feeds: these are the
+        # vocabulary shipping disruption is actually reported in.
+        "bab el-mandeb", "bab al-mandab", "gulf of aden", "red sea corridor",
+        "strait of hormuz", "suez canal", "panama canal", "bosphorus",
+        "vessel seizure", "ship attacked", "cargo vessel", "bulk carrier",
+        "shipping traffic", "maritime security", "port call",
     ),
     "regulatory": (
         "export control", "final rule", "proposed rule", "federal register",

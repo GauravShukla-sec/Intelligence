@@ -1308,17 +1308,38 @@
     const okCount = feeds.filter((f) => f.status === "ok").length;
     const problems = feeds.filter((f) => f.status === "error" || f.status === "empty").length;
 
+    // "Error" alone hides the distinction that actually matters: a feed that has
+    // NEVER worked here needs a different fix from one that worked until today.
+    // The same feed can also be healthy on one deployment and blocked on
+    // another (datacenter IPs get refused), so say which state this is.
+    function condition(f) {
+      if (!f.enabled_by_default && f.status === "unknown") {
+        return { label: "Disabled", note: "not polled by configuration" };
+      }
+      if (f.status === "ok") return { label: "OK", note: "" };
+      if (!f.last_success) {
+        return { label: "Never worked here",
+                 note: "no successful fetch on this deployment" };
+      }
+      return { label: "Was working", note: "last succeeded " + API.relTime(f.last_success) };
+    }
+
     const rows = feeds.map((f) => {
       const m = META[f.status] || META.unknown;
-      const last = f.last_success ? API.fmtTime(f.last_success) : "—";
+      const c = condition(f);
+      const quarantined = (f.consecutive_failures || 0) >= 5;
+      const last = f.last_success ? API.fmtTime(f.last_success) : "never";
+      const detail = ["tier " + f.tier, f.source_type, c.note].filter(Boolean).join(" · ");
       return h("tr", null, [
         h("td", null, h("span", { class: "fh-dot " + m.cls, title: m.label }, [
           h("span", { "aria-hidden": "true" }, m.sym), " ",
-          h("span", null, m.label),
+          h("span", null, c.label),
         ])),
         h("td", null, [h("a", { href: f.url, target: "_blank", rel: "noopener noreferrer" }, f.name),
-          h("div", { class: "sd-reason" }, "tier " + f.tier + " · " + f.source_type +
-            (f.error ? " · " + f.error : ""))]),
+          h("div", { class: "sd-reason" }, detail + (f.error ? " · " + f.error : "")),
+          quarantined ? h("div", { class: "sd-reason" },
+            "⏸ paused after " + f.consecutive_failures
+            + " failures; re-probed periodically") : null]),
         h("td", { class: "num" }, String(f.last_count)),
         h("td", { class: "sd-reason" }, last),
       ]);
