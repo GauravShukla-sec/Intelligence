@@ -104,6 +104,58 @@
     return d;
   }
 
+  const IMPACT_LABEL_CLASS = {
+    Critical: "sev-critical", High: "sev-high",
+    Moderate: "sev-moderate", Low: "sev-low",
+  };
+
+  function showTip(tip, name, r, evt, svgEl, focusEl) {
+    tip.textContent = "";
+    tip.appendChild(h("div", { class: "gt-name" }, name));
+
+    const meta = h("div", { class: "gt-meta" }, [
+      h("span", { class: "chip " + (IMPACT_LABEL_CLASS[r.impact] || "") },
+        [h("span", { class: "ico", "aria-hidden": "true" },
+           C.IMPACT_ICON ? (C.IMPACT_ICON[r.impact] || "•") : "•"),
+         h("span", null, r.impact)]),
+      h("span", { class: "gt-count" },
+        r.count + " development" + (r.count === 1 ? "" : "s")),
+    ]);
+    tip.appendChild(meta);
+
+    // "New" is what a desk actually scans for: activity since it last looked.
+    if (r.recent) {
+      tip.appendChild(h("div", { class: "gt-new" },
+        r.recent + " new in the last 72h"));
+    }
+    (r.latest || []).forEach((t) =>
+      tip.appendChild(h("div", { class: "gt-story" }, t)));
+    tip.appendChild(h("div", { class: "gt-hint" }, "Click to filter stories"));
+
+    // Position against the map container, not the page, so the panel stays
+    // put when the page scrolls under it.
+    const host = svgEl.parentElement;
+    const hostBox = host.getBoundingClientRect();
+    let x, y;
+    if (evt) {
+      x = evt.clientX - hostBox.left + 14;
+      y = evt.clientY - hostBox.top + 14;
+    } else if (focusEl) {                 // keyboard: anchor to the shape
+      const b = focusEl.getBoundingClientRect();
+      x = b.left + b.width / 2 - hostBox.left + 12;
+      y = b.top + b.height / 2 - hostBox.top + 12;
+    } else { x = 12; y = 12; }
+    tip.hidden = false;
+    // Flip before it runs off the right or bottom edge.
+    const tw = tip.offsetWidth || 240, th = tip.offsetHeight || 120;
+    if (x + tw > hostBox.width) x = Math.max(8, x - tw - 28);
+    if (y + th > hostBox.height) y = Math.max(8, y - th - 28);
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+
+  function hideTip(tip) { tip.hidden = true; }
+
   function riskOpacity(count) {
     // On a flat map a high floor kept every shaded country legible. On a globe
     // that made the whole sphere one colour, because "worst impact ever seen"
@@ -136,6 +188,9 @@
     const grat = svg("path", { class: "map-grat", d: graticulePath(30) });
     s.appendChild(grat);
 
+    const tip = h("div", { class: "globe-tip", hidden: true, role: "status",
+                           "aria-live": "polite" });
+
     // Redraw on rotation reuses these nodes — rebuilding 177 paths per frame
     // would allocate constantly and drop frames while dragging.
     const countryPaths = [];
@@ -159,6 +214,18 @@
       const title = svg("title", {});
       title.textContent = label;
       path.appendChild(title);
+
+      // Hover/focus detail. The native <title> tooltip is slow to appear and
+      // cannot be styled or show structure, so it stays as the accessible
+      // fallback while this panel does the real work.
+      if (r) {
+        const show = (evt) => showTip(tip, f.properties.name, r, evt, s);
+        path.addEventListener("pointerenter", show);
+        path.addEventListener("pointermove", show);
+        path.addEventListener("pointerleave", () => hideTip(tip));
+        path.addEventListener("focus", () => showTip(tip, f.properties.name, r, null, s, path));
+        path.addEventListener("blur", () => hideTip(tip));
+      }
 
       // Only countries that actually have tracked activity are interactive.
       // Clicking an inert country just opened an empty filter, and making all
@@ -230,6 +297,7 @@
     }
     attachRotation(s, redraw);
     redraw();
+    s._tip = tip;                 // the caller mounts it beside the svg
     return s;
   }
 
@@ -334,7 +402,9 @@
     const holder = h("div", { class: "map-canvas" }, C.loading());
     loadGeo().then((geo) => {
       holder.textContent = "";
-      holder.appendChild(buildSvg(geo, data, onPoint, onCountry));
+      const built = buildSvg(geo, data, onPoint, onCountry);
+      holder.appendChild(built);
+      if (built._tip) holder.appendChild(built._tip);
       // Equivalent non-visual route to the same information. A choropleth is
       // not usable with a screen reader however well each shape is labelled.
       holder.appendChild(countryTextAlternative(geo, data, onCountry));

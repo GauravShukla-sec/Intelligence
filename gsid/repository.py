@@ -696,17 +696,30 @@ def country_risk(conn, data_mode: str | None = None) -> dict[str, dict]:
         where += " AND s.is_demo=1"
     elif data_mode == "live":
         where += " AND s.is_demo=0"
+    # Ordered newest-first so the first few rows per country are also the
+    # headlines worth previewing on hover — one pass, no extra query.
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
-        f"SELECT sc.country AS c, s.impact AS impact FROM story_country sc "
-        f"JOIN story s ON sc.story_id = s.id WHERE {where}").fetchall()
+        f"SELECT sc.country AS c, s.impact AS impact, s.headline AS headline, "
+        f"COALESCE(s.event_time, s.first_seen) AS seen "
+        f"FROM story_country sc JOIN story s ON sc.story_id = s.id "
+        f"WHERE {where} ORDER BY seen DESC").fetchall()
     agg: dict[str, dict] = {}
     for r in rows:
         c = (r["c"] or "").strip().lower()
         if not c:
             continue
         rank = _IMPACT_RANK.get(r["impact"], 0)
-        e = agg.setdefault(c, {"count": 0, "rank": 0, "impact": "Low"})
+        e = agg.setdefault(c, {"count": 0, "rank": 0, "impact": "Low",
+                               "recent": 0, "latest": []})
         e["count"] += 1
+        if (r["seen"] or "") >= cutoff:
+            e["recent"] += 1
+        if len(e["latest"]) < 3:
+            e["latest"].append((r["headline"] or "").replace("[DEMO] ", "")[:110])
         if rank > e["rank"]:
             e["rank"], e["impact"] = rank, r["impact"] or "Low"
-    return {c: {"impact": v["impact"], "count": v["count"]} for c, v in agg.items()}
+    return {c: {"impact": v["impact"], "count": v["count"],
+                "recent": v["recent"], "latest": v["latest"]}
+            for c, v in agg.items()}

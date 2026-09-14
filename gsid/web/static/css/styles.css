@@ -442,6 +442,29 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 .map-ocean { fill: var(--panel-2); }
 .map-grat { stroke: var(--border); stroke-width: .4; stroke-opacity: .5; }
 .map-country { fill: var(--border-2); fill-opacity: .55; stroke: var(--panel); stroke-width: .4; transition: fill-opacity .12s, stroke .12s; }
+/* Globe hover detail. Positioned against .map-canvas, which must therefore
+   establish a containing block. */
+.map-canvas { position: relative; }
+.globe-tip {
+  position: absolute; z-index: 5; pointer-events: none;
+  max-width: 270px; padding: .7rem .8rem;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  border: 1px solid var(--border-2); border-radius: var(--radius-sm);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35);
+  backdrop-filter: blur(6px);
+}
+.globe-tip[hidden] { display: none; }
+.gt-name { font-family: var(--serif); font-size: 1.02rem; font-weight: 500; line-height: 1.2; }
+.gt-meta { display: flex; align-items: center; gap: .4rem; margin: .4rem 0 .1rem; flex-wrap: wrap; }
+.gt-count { font-size: .76rem; color: var(--text-dim); }
+.gt-new { font-size: .76rem; font-weight: 600; color: var(--accent); margin-bottom: .35rem; }
+.gt-story {
+  font-size: .78rem; color: var(--text-dim); line-height: 1.35;
+  padding-left: .6rem; border-left: 2px solid var(--border-2); margin-top: .3rem;
+}
+.gt-hint { font-size: .7rem; color: var(--text-mute); margin-top: .5rem;
+  text-transform: uppercase; letter-spacing: .07em; }
+
 /* Globe */
 .world-map { touch-action: none; cursor: grab; display: block; margin: 0 auto; max-width: 620px; }
 /* The globe is round, so a rectangular focus box around the whole SVG
