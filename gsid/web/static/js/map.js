@@ -17,10 +17,31 @@
     return el;
   }
 
-  const W = 1000, H = 500;               // 2:1 == correct equirectangular aspect
+  // Orthographic globe. A flat plate-carrée map is a picture of the world; a
+  // globe you can turn is the world — and for a desk whose whole subject is
+  // where things are happening, that difference is the point.
+  const W = 900, H = 900;
+  const R = 366, CX = W / 2, CY = H / 2;
+  const RAD = Math.PI / 180;
+
+  // Rotation state: lambda0 = spin (lon), phi0 = tilt (lat).
+  const view = { lam: -10 * RAD, phi: 12 * RAD };
+
   function proj(lat, lon) {
-    return [((lon + 180) / 360) * W, ((90 - lat) / 180) * H];
+    const phi = lat * RAD, lam = lon * RAD - view.lam;
+    const cosPhi = Math.cos(phi), sinPhi = Math.sin(phi);
+    const cosLam = Math.cos(lam), sinLam = Math.sin(lam);
+    const cosPhi0 = Math.cos(view.phi), sinPhi0 = Math.sin(view.phi);
+    // cos of angular distance from the view centre: negative == far side.
+    const cosc = sinPhi0 * sinPhi + cosPhi0 * cosPhi * cosLam;
+    return [
+      CX + R * cosPhi * sinLam,
+      CY - R * (cosPhi0 * sinPhi - sinPhi0 * cosPhi * cosLam),
+      cosc,
+    ];
   }
+
+  function visible(lat, lon) { return proj(lat, lon)[2] >= 0; }
 
   const IMPACT_COLOR = {
     Critical: "var(--sev-critical)", High: "var(--sev-high)",
@@ -34,35 +55,91 @@
     return _geo;
   }
 
+  // Points on the far side of the globe project onto the near hemisphere
+  // mirrored, so they must be dropped rather than drawn. Each ring therefore
+  // becomes one or more visible segments instead of a single closed loop.
   function pathFor(geom) {
     const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.coordinates;
     let d = "";
     for (const poly of polys) {
       for (const ring of poly) {
+        let open = false;
         for (let i = 0; i < ring.length; i++) {
-          const [x, y] = proj(ring[i][1], ring[i][0]);
-          d += (i === 0 ? "M" : "L") + x.toFixed(1) + "," + y.toFixed(1);
+          const [x, y, c] = proj(ring[i][1], ring[i][0]);
+          if (c < 0) {                 // crossed the horizon — end this segment
+            if (open) { d += "Z"; open = false; }
+            continue;
+          }
+          d += (open ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+          open = true;
         }
-        d += "Z";
+        if (open) d += "Z";
+      }
+    }
+    return d;
+  }
+
+  // Meridians and parallels give the sphere its depth; without them a filled
+  // circle of countries reads as a sticker rather than a globe.
+  function graticulePath(step) {
+    let d = "";
+    for (let lon = -180; lon <= 180; lon += step) {
+      let open = false;
+      for (let lat = -90; lat <= 90; lat += 3) {
+        const [x, y, c] = proj(lat, lon);
+        if (c < 0) { open = false; continue; }
+        d += (open ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+        open = true;
+      }
+    }
+    for (let lat = -60; lat <= 60; lat += step) {
+      let open = false;
+      for (let lon = -180; lon <= 180; lon += 3) {
+        const [x, y, c] = proj(lat, lon);
+        if (c < 0) { open = false; continue; }
+        d += (open ? "L" : "M") + x.toFixed(1) + "," + y.toFixed(1);
+        open = true;
       }
     }
     return d;
   }
 
   function riskOpacity(count) {
-    // High floor so every risk colour (Low→Critical) reads clearly; volume
-    // only nudges it. The hue carries the impact, not the opacity.
-    return Math.min(0.9, 0.62 + Math.min(count, 6) * 0.045);
+    // On a flat map a high floor kept every shaded country legible. On a globe
+    // that made the whole sphere one colour, because "worst impact ever seen"
+    // is Critical for most countries. Volume now carries the weight: a country
+    // with one report reads faintly, a hotspot reads solid.
+    const n = Math.max(1, count);
+    return Math.min(0.92, 0.18 + Math.log(n + 1) / Math.log(40) * 0.74);
   }
 
   function buildSvg(geo, data, onPoint, onCountry) {
     const risk = data.country_risk || {};
     const s = svg("svg", { viewBox: "0 0 " + W + " " + H, class: "world-map",
       role: "img", "aria-label": "World map of tracked developments by country" });
-    // ocean + graticule
-    s.appendChild(svg("rect", { x: 0, y: 0, width: W, height: H, class: "map-ocean", rx: 8 }));
-    for (let x = 0; x <= W; x += 1000 / 12) s.appendChild(svg("line", { x1: x, y1: 0, x2: x, y2: H, class: "map-grat" }));
-    for (let y = 0; y <= H; y += 500 / 6) s.appendChild(svg("line", { x1: 0, y1: y, x2: W, y2: y, class: "map-grat" }));
+    // Sphere: a soft limb gradient reads as curvature, so the disc looks like a
+    // body in space rather than a filled circle.
+    const defs = svg("defs", {});
+    defs.innerHTML =
+      '<radialGradient id="globeShade" cx="38%" cy="32%" r="78%">' +
+      '<stop offset="0%" stop-color="var(--panel-3)"/>' +
+      '<stop offset="62%" stop-color="var(--panel-2)"/>' +
+      '<stop offset="100%" stop-color="var(--bg-2)"/>' +
+      '</radialGradient>' +
+      '<radialGradient id="globeGlow" cx="50%" cy="50%" r="50%">' +
+      '<stop offset="86%" stop-color="var(--accent)" stop-opacity="0"/>' +
+      '<stop offset="100%" stop-color="var(--accent)" stop-opacity="0.22"/>' +
+      '</radialGradient>';
+    s.appendChild(defs);
+    s.appendChild(svg("circle", { cx: CX, cy: CY, r: R, class: "globe-sphere",
+                                  fill: "url(#globeShade)" }));
+    const grat = svg("path", { class: "map-grat", d: graticulePath(30) });
+    s.appendChild(grat);
+
+    // Redraw on rotation reuses these nodes — rebuilding 177 paths per frame
+    // would allocate constantly and drop frames while dragging.
+    const countryPaths = [];
+    const dotNodes = [];
 
     // countries
     for (const f of geo.features) {
@@ -100,6 +177,7 @@
         // Decorative landmass: announced via the map's own label, not per-shape.
         path.setAttribute("aria-hidden", "true");
       }
+      countryPaths.push([path, f.geometry]);
       s.appendChild(path);
     }
 
@@ -127,9 +205,80 @@
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
       });
       g.appendChild(c); g.appendChild(title);
+      dotNodes.push([g, p]);
       s.appendChild(g);
     }
+
+    // Reproject everything for the current rotation. Dots on the far side are
+    // hidden rather than moved, otherwise they would surface on the wrong
+    // continent.
+    function redraw() {
+      s.appendChild(grat);                       // keep graticule under nothing
+      grat.setAttribute("d", graticulePath(30));
+      for (const [path, geom] of countryPaths) path.setAttribute("d", pathFor(geom));
+      for (const [g, p] of dotNodes) {
+        const [x, y, c] = proj(p.lat, p.lon);
+        if (c < 0) { g.setAttribute("visibility", "hidden"); continue; }
+        g.removeAttribute("visibility");
+        g.querySelectorAll("circle").forEach((el) => {
+          el.setAttribute("cx", x.toFixed(1));
+          el.setAttribute("cy", y.toFixed(1));
+        });
+      }
+    }
+    attachRotation(s, redraw);
+    redraw();
     return s;
+  }
+
+  // Drag to spin. Pointer events cover mouse, trackpad and touch in one path;
+  // setPointerCapture keeps the gesture alive when the cursor leaves the disc.
+  function attachRotation(node, redraw) {
+    let dragging = false, lastX = 0, lastY = 0, raf = 0;
+    const MAX_TILT = 78 * RAD;
+
+    function schedule() {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; redraw(); });
+    }
+    node.addEventListener("pointerdown", (e) => {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      node.setPointerCapture(e.pointerId);
+      node.classList.add("grabbing");
+    });
+    node.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const box = node.getBoundingClientRect();
+      // Scale by rendered size so a drag moves the same arc at any zoom.
+      const k = (Math.PI / Math.max(box.width, 1)) * 1.1;
+      view.lam -= (e.clientX - lastX) * k;
+      view.phi = Math.max(-MAX_TILT, Math.min(MAX_TILT, view.phi + (e.clientY - lastY) * k));
+      lastX = e.clientX; lastY = e.clientY;
+      schedule();
+    });
+    const stop = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      node.classList.remove("grabbing");
+      if (e.pointerId !== undefined && node.hasPointerCapture?.(e.pointerId)) {
+        node.releasePointerCapture(e.pointerId);
+      }
+    };
+    node.addEventListener("pointerup", stop);
+    node.addEventListener("pointercancel", stop);
+
+    // Keyboard parity: the globe is a control, so arrows must turn it.
+    node.setAttribute("tabindex", "0");
+    node.addEventListener("keydown", (e) => {
+      const step = 6 * RAD;
+      if (e.key === "ArrowLeft") view.lam -= step;
+      else if (e.key === "ArrowRight") view.lam += step;
+      else if (e.key === "ArrowUp") view.phi = Math.min(MAX_TILT, view.phi + step);
+      else if (e.key === "ArrowDown") view.phi = Math.max(-MAX_TILT, view.phi - step);
+      else return;
+      e.preventDefault();
+      schedule();
+    });
   }
 
   function countryTextAlternative(geo, data, onCountry) {
