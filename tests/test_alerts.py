@@ -51,15 +51,23 @@ def test_unknown_event_time_still_alerts():
                              event_time="not-a-date", now=NOW) is True
 
 
-def test_score_floor_scales_with_impact():
-    # Critical needs 50+, High needs 65+.
-    assert is_critical_alert(50, "Immediate", "Critical", "High",
-                             event_time=_iso(1), now=NOW) is True
-    assert is_critical_alert(49, "Immediate", "Critical", "High",
+def test_no_separate_score_floor():
+    """The impact tier already encodes the score, so the gate must not re-test it.
+
+    The old floor (Critical 50+, High 65+) compensated for `derive_impact`
+    promoting a quarter of all stories on life-safety alone. With impact derived
+    from the score, keeping the floor dropped the alert rate to 0.1%.
+    """
+    for score in (50, 60, 70, 92):
+        impact = "Critical" if score >= 70 else "High"
+        assert is_critical_alert(score, "Immediate", impact, "High",
+                                 event_time=_iso(1), now=NOW) is True
+
+
+def test_impact_tier_is_what_gates_alerts():
+    assert is_critical_alert(49, "Immediate", "Moderate", "High",
                              event_time=_iso(1), now=NOW) is False
-    assert is_critical_alert(64, "Immediate", "High", "High",
-                             event_time=_iso(1), now=NOW) is False
-    assert is_critical_alert(65, "Immediate", "High", "High",
+    assert is_critical_alert(50, "Immediate", "High", "High",
                              event_time=_iso(1), now=NOW) is True
 
 

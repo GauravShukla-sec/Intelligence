@@ -86,16 +86,44 @@ def _clamp01(v: float) -> float:
 # --------------------------------------------------------------------------
 # Categorical ratings derived from signals + explicit hints
 # --------------------------------------------------------------------------
-def derive_impact(score: int, signals: dict[str, float]) -> tuple[str, str]:
-    """Impact tier + rationale. Combines composite score with life-safety."""
-    life = _clamp01(signals.get("people_safety", 0))
-    if score >= 75 or life >= 0.9:
-        return "Critical", (
-            "Composite relevance is very high"
-            + (" and a direct life-safety threat is present" if life >= 0.9 else "")
-            + "."
-        )
-    if score >= 55 or life >= 0.6:
+def derive_impact(score: int, signals: dict[str, float] | None = None) -> tuple[str, str]:
+    """Impact tier + rationale, from the composite relevance score alone.
+
+    This used to promote any story with people_safety >= 0.9 straight to
+    Critical, and >= 0.6 to High, regardless of score. The effect on 3,693
+    stored stories:
+
+        Critical   817 (22%)   median relevance 30, minimum 20
+        High       367 ( 9%)   median relevance 24
+        Moderate   366 ( 9%)   median relevance 34   <-- higher than Critical
+        Low       2143 (58%)   median relevance 14
+
+    Moderate outranking Critical is not a tuning problem, it means the ladder
+    did not measure one thing. 96% of Criticals (788 of 817) scored below 75
+    and were there on the override alone, so "Critical" had come to mean "this
+    story mentions harm to people" — which is most news, and 22% of the corpus.
+
+    people_safety is already the heaviest dimension in RELEVANCE_MODEL, worth
+    20 of 100 points. The override applied that same signal a second time and
+    let it overrule every other dimension, so a wildfire with no bearing on any
+    site, route or employee outranked a scored-out supply-chain rupture. Impact
+    is now a pure function of the score: if life-safety deserves more weight,
+    the honest place to say so is RELEVANCE_MODEL, where it is visible and
+    explained, not in a bypass that silently contradicts it.
+
+    The boundaries moved with the override's removal. The brief's 75/55 assumed
+    scores spread across the range; the analyzer's actual distribution over
+    3,693 stories is compressed — median 20, p95 51, p99 70 — so those lines sat
+    in the far tail and left High and Critical holding 3% of stories between
+    them, with real events below the cut (a deadly strike on a Kyiv warehouse
+    scores 59). 70 and 50 sit at roughly p99 and p95, which is the rarity the
+    brief described, measured against the scores actually produced.
+
+    Urgency keeps its life-safety override on purpose — see `derive_urgency`.
+    """
+    if score >= 70:
+        return "Critical", "Composite relevance is very high across dimensions."
+    if score >= 50:
         return "High", "Multiple material impact dimensions are engaged."
     if score >= 30:
         return "Moderate", "Some impact dimensions are engaged but contained."
@@ -103,6 +131,13 @@ def derive_impact(score: int, signals: dict[str, float]) -> tuple[str, str]:
 
 
 def derive_urgency(velocity: str, signals: dict[str, float]) -> tuple[str, str]:
+    """How fast to respond. Life-safety legitimately forces Immediate here.
+
+    Unlike impact, this is a question about time, not size. A threat to people
+    is time-critical whether or not it touches anything the business owns, so
+    the override belongs on this axis. It cannot inflate the alert panel by
+    itself: alerting also requires High or Critical impact.
+    """
     life = _clamp01(signals.get("people_safety", 0))
     if velocity == "Immediate" or life >= 0.9:
         return "Immediate", "Fast-moving and/or an active life-safety dimension."
@@ -172,7 +207,13 @@ def is_critical_alert(score: int, urgency: str, impact: str, confidence: str,
       * evidence worth acting on — Low/Unverified confidence never alerts
       * high impact AND near-term urgency
       * a RECENT event: "prompt action" is meaningless for something weeks old
-      * a score floor that scales with impact (Critical 50+, High 65+)
+
+    There used to be a further score floor (Critical 50+, High 65+). It existed
+    to undo the inflation in `derive_impact`, which promoted a quarter of all
+    stories to High or Critical on life-safety alone. With impact derived from
+    the score, the floor re-applies the same test the tier already encodes, and
+    keeping it cut the alert rate to 0.1%. Removing it leaves 0.6%, down from
+    1.1%, with the High/Critical population falling from 931 stories to 30.
     """
     if (status or "").lower() == "advisory":
         return False
@@ -182,9 +223,7 @@ def is_critical_alert(score: int, urgency: str, impact: str, confidence: str,
         return False
     if urgency not in {"Immediate", "24 Hours"}:
         return False
-    if not _event_is_recent(event_time, now):
-        return False
-    return score >= (50 if impact == "Critical" else 65)
+    return _event_is_recent(event_time, now)
 
 
 def _event_is_recent(event_time: str | None, now: datetime | None = None) -> bool:

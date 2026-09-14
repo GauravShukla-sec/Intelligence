@@ -40,10 +40,27 @@ def test_signal_clamped():
     assert b.total == 20
 
 
-def test_derive_impact_critical_on_life_safety():
-    impact, reason = derive_impact(30, {"people_safety": 0.95})
-    assert impact == "Critical"
-    assert "life-safety" in reason
+def test_derive_impact_ignores_life_safety_override():
+    """Life-safety alone must not promote a low-scoring story.
+
+    It used to award Critical on people_safety >= 0.9 at any score, which made
+    22% of the corpus Critical at a median relevance of 30. people_safety is
+    already worth 20 of the 100 points; the tier must not count it twice.
+    """
+    assert derive_impact(30, {"people_safety": 1.0})[0] == "Moderate"
+    assert derive_impact(20, {"people_safety": 1.0})[0] == "Low"
+    assert derive_impact(70, {"people_safety": 0.0})[0] == "Critical"
+
+
+def test_derive_impact_is_monotonic_in_score():
+    """Tiers must order the same way the score does.
+
+    The old ladder put Moderate's median relevance (34) above Critical's (30) —
+    a sign it was not measuring one thing.
+    """
+    order = ["Low", "Moderate", "High", "Critical"]
+    seen = [derive_impact(s, {})[0] for s in range(0, 101)]
+    assert [t for i, t in enumerate(seen) if i == 0 or t != seen[i - 1]] == order
 
 
 def test_derive_urgency_immediate_on_fast_life():
@@ -70,5 +87,5 @@ def test_geo_scope_scaling():
 
 def test_alert_gating_rejects_unverified_low_impact():
     assert is_critical_alert(80, "Immediate", "Moderate", "Unverified") is False
-    assert is_critical_alert(60, "Immediate", "Critical", "High") is True
-    assert is_critical_alert(30, "Immediate", "High", "High") is False  # below score floor
+    assert is_critical_alert(70, "Immediate", "Critical", "High") is True
+    assert is_critical_alert(80, "7 Days", "Critical", "High") is False
