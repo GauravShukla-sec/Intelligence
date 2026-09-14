@@ -15,25 +15,37 @@
   font-display: swap; src: url("/static/fonts/inter-700.woff2") format("woff2"); }
 @font-face { font-family: "JetBrains Mono"; font-style: normal; font-weight: 500;
   font-display: swap; src: url("/static/fonts/jbmono-500.woff2") format("woff2"); }
+/* Editorial serif for display type. An all-sans interface is the single
+   clearest tell of a generic template; this desk is a publication, so its
+   headlines are set like one. */
+@font-face { font-family: "Newsreader"; font-style: normal; font-weight: 400;
+  font-display: swap; src: url("/static/fonts/newsreader-400.woff2") format("woff2"); }
+@font-face { font-family: "Newsreader"; font-style: normal; font-weight: 500;
+  font-display: swap; src: url("/static/fonts/newsreader-500.woff2") format("woff2"); }
+@font-face { font-family: "Newsreader"; font-style: normal; font-weight: 600;
+  font-display: swap; src: url("/static/fonts/newsreader-600.woff2") format("woff2"); }
 
 :root {
   --sidebar-w: 264px;
   --topbar-h: 56px;
 
   /* Dark "Midnight Desk" theme (default) — editorial near-black, quiet borders */
-  --bg: #05080f;
-  --bg-2: #0a0f1a;
-  --panel: #0d1422;
-  --panel-2: #131c2e;
-  --panel-3: #1b2740;
-  --border: #1d2a41;
-  --border-2: #2b3d5b;
-  --text: #f2f5fb;
-  --text-dim: #aab7cf;
-  --text-mute: #6d7f9c;
-  --accent: #5aa2ff;
-  --accent-2: #4fe0c0;
-  --accent-soft: rgba(90,162,255,.14);
+  --bg: #0b0b0c;
+  --bg-2: #0f0f11;
+  --panel: #131315;
+  --panel-2: #191a1d;
+  --panel-3: #212227;
+  --border: #232428;
+  --border-2: #34363c;
+  --text: #f4f3f1;
+  --text-dim: #b4b2ad;
+  --text-mute: #807d77;
+  /* One accent, used sparingly. The previous blue-on-navy was doing brand,
+     links, focus, severity-moderate and chart fills at once, which is what
+     made every surface look the same. */
+  --accent: #c87b4a;
+  --accent-2: #8f9b8a;
+  --accent-soft: rgba(200,123,74,.12);
   --focus: #ffcf4d;
 
   /* Colourblind-aware status hues (Okabe-Ito inspired) */
@@ -51,26 +63,27 @@
 
   --shadow: 0 18px 50px rgba(0,0,0,.55);
   --shadow-sm: 0 2px 14px rgba(0,0,0,.38);
-  --radius: 16px;
-  --radius-sm: 10px;
+  --radius: 10px;
+  --radius-sm: 7px;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --serif: "Newsreader", "Iowan Old Style", Georgia, "Times New Roman", serif;
 }
 
 [data-theme="light"] {
-  --bg: #f4f6fb;
-  --bg-2: #eaeff7;
-  --panel: #ffffff;
-  --panel-2: #f5f8fc;
-  --panel-3: #eef3fa;
-  --border: #dde4ef;
-  --border-2: #c6d1e2;
-  --text: #101a2b;
-  --text-dim: #48586e;
-  --text-mute: #71829b;
-  --accent: #2563eb;
-  --accent-2: #0d9488;
-  --accent-soft: rgba(37,99,235,.10);
+  --bg: #f7f5f1;
+  --bg-2: #f1eee8;
+  --panel: #fffefc;
+  --panel-2: #f7f5f1;
+  --panel-3: #efece6;
+  --border: #e2ded6;
+  --border-2: #cdc8bd;
+  --text: #171614;
+  --text-dim: #4d4a45;
+  --text-mute: #6f6b64;   /* 4.87:1 on bg, 5.26:1 on panel — 4.15:1 failed AA */
+  --accent: #9c5a2c;
+  --accent-2: #5f6b5c;
+  --accent-soft: rgba(156,90,44,.10);
   --sev-critical: #d63a63;
   --sev-high: #d9822b;
   --sev-moderate: #2563eb;
@@ -88,10 +101,7 @@
 html, body { margin: 0; padding: 0; }
 body {
   font-family: var(--sans);
-  background:
-    radial-gradient(1200px 600px at 78% -8%, var(--accent-soft), transparent 60%),
-    var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);
   color: var(--text);
   font-size: 16px;
   line-height: 1.6;
@@ -101,8 +111,13 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1,h2,h3,h4 { line-height: 1.18; margin: 0 0 .5rem; font-weight: 700; letter-spacing: -.02em; }
-h1 { letter-spacing: -.032em; }
+h1, h2, h3 {
+  font-family: var(--serif);
+  line-height: 1.14; margin: 0 0 .5rem;
+  font-weight: 500; letter-spacing: -.012em;
+}
+h4 { line-height: 1.18; margin: 0 0 .5rem; font-weight: 600; letter-spacing: -.01em; }
+h1 { letter-spacing: -.018em; }
 p { margin: 0 0 .75rem; }
 .num, .mono, [class*="num"] { font-variant-numeric: tabular-nums; }
 
@@ -215,8 +230,10 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 
 /* ---------------- Common components ---------------- */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2.1rem; flex-wrap: wrap; }
-.page-head h1 { font-size: 2.15rem; font-weight: 650; letter-spacing: -.035em; margin: 0; }
-.page-head .sub { color: var(--text-mute); font-size: .9rem; max-width: 74ch; }
+.page-head h1 { font-size: 2.6rem; font-weight: 500; letter-spacing: -.02em; margin: 0; line-height: 1.06; }
+.page-head .sub { color: var(--text-mute); font-size: .92rem; max-width: 68ch; }
+/* Hairline rule under the page title — print furniture, not a card edge. */
+.page-head { border-bottom: 1px solid var(--border); padding-bottom: 1.1rem; }
 
 .grid { display: grid; gap: 1.25rem; }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
@@ -227,11 +244,14 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 
 .panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 1.7rem 1.8rem; box-shadow: var(--shadow-sm);
+  padding: 1.7rem 1.8rem;
 }
 .panel h2 { font-size: 1.06rem; font-weight: 600; letter-spacing: -.018em; display: flex; align-items: center; gap: .5rem; margin-bottom: .9rem; }
 .panel .panel-sub { color: var(--text-mute); font-size: .82rem; margin-top: -.3rem; }
-.section-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-mute); margin: 1.4rem 0 .6rem; }
+.section-title {
+  font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .14em;
+  color: var(--text-mute); margin: 1.6rem 0 .7rem;
+}
 
 .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; }
 .stat .num { font-size: 1.9rem; font-weight: 750; font-family: var(--mono); }
