@@ -21,18 +21,18 @@ from .base import AnalysisInput, AnalysisResult
 # --------------------------------------------------------------------------
 _LEX: dict[str, list[tuple[float, list[str]]]] = {
     "people_safety": [
-        (1.0, ["killed", "casualt", "fatalit", "dead", "shooting", "gunman",
-               "hostage", "kidnap", "explosion", "bombing", "stabbing",
-               "evacuat", "wildfire", "earthquake", "flood", "hurricane",
+        (1.0, ["killed", "casualt*", "fatalit*", "dead", "shooting", "gunman",
+               "hostage", "kidnap*", "explosion", "bombing", "stabbing",
+               "evacuat*", "wildfire", "earthquake", "flood", "hurricane",
                "typhoon", "outbreak", "attack on", "armed attack"]),
-        (0.6, ["injur", "clash", "violence", "unrest", "riot", "protest",
-               "curfew", "shelling", "airstrike", "militant", "extremist",
-               "toxic", "contamination", "storm", "heatwave"]),
+        (0.6, ["injur*", "clash", "violence", "unrest", "riot", "protest",
+               "curfew", "shelling*", "airstrike", "militant*", "extremist*",
+               "toxic", "contamination*", "storm", "heatwave"]),
         (0.3, ["threat", "warning", "tension", "standoff", "demonstration"]),
     ],
     "facility_assets": [
         (1.0, ["factory", "plant", "warehouse", "refinery", "substation",
-               "arson", "sabotage", "vandal", "torched", "destroyed facility"]),
+               "arson", "sabotage", "vandal*", "torched*", "destroyed facility"]),
         (0.6, ["office", "building", "site", "depot", "terminal", "pipeline",
                "damaged", "fire at", "break-in", "intrusion", "perimeter"]),
         (0.3, ["infrastructure", "installation", "premises"]),
@@ -40,15 +40,15 @@ _LEX: dict[str, list[tuple[float, list[str]]]] = {
     "operational": [
         (1.0, ["shutdown", "halted production", "suspended operations",
                "blackout", "power outage", "grid failure", "evacuated staff"]),
-        (0.6, ["disruption", "closure", "closed", "outage", "downtime",
-               "strike", "walkout", "stoppage", "delay", "grounded"]),
-        (0.3, ["slowdown", "restriction", "reduced", "backlog"]),
+        (0.6, ["disruption", "closure", "closed", "outage", "downtime*",
+               "strike", "walkout*", "stoppage*", "delay", "grounded*"]),
+        (0.3, ["slowdown", "restriction", "reduced", "backlog*"]),
     ],
     "supply_chain": [
         (1.0, ["port", "shipping", "container", "cargo theft", "canal",
                "strait", "blockade", "customs", "freight", "logistics",
                "supply chain", "rail freight", "trucking"]),
-        (0.6, ["export", "import", "tariff", "border", "smuggl", "counterfeit",
+        (0.6, ["export", "import", "tariff", "border", "smuggl*", "counterfeit",
                "seal", "vessel", "maritime", "airfreight", "warehouse"]),
         (0.3, ["trade", "supplier", "route", "corridor", "distribution"]),
     ],
@@ -57,12 +57,12 @@ _LEX: dict[str, list[tuple[float, list[str]]]] = {
                "sanction", "export control", "compliance deadline",
                "enforcement action", "gdpr", "csddd", "forced labor",
                "forced labour", "aeo", "legislation", "statute"]),
-        (0.6, ["law", "bill", "rule", "mandate", "fine", "penalt", "court",
+        (0.6, ["law", "bill", "rule", "mandate", "fine", "penalt*", "court",
                "ruling", "regulator", "customs authority", "reporting requirement"]),
         (0.3, ["policy", "guidance", "standard", "iso "]),
     ],
     "geopolitical": [
-        (1.0, ["war", "invasion", "coup", "mobiliz", "missile", "nuclear",
+        (1.0, ["war", "invasion", "coup", "mobiliz*", "missile", "nuclear",
                "military escalation", "annex", "airspace"]),
         (0.6, ["conflict", "diplomat", "treaty", "alliance", "sanction",
                "border tension", "territorial", "election dispute", "ceasefire"]),
@@ -72,7 +72,7 @@ _LEX: dict[str, list[tuple[float, list[str]]]] = {
         (1.0, ["ransomware", "ics", "scada", "operational technology",
                "ot network", "industrial control", "cyberattack on",
                "control system", "gps jamming", "gps spoof"]),
-        (0.6, ["cyberattack", "hack", "breach", "malware", "deepfake",
+        (0.6, ["cyberattack", "hack*", "breach*", "malware*", "deepfake",
                "drone", "surveillance", "biometric", "data center outage"]),
         (0.3, ["vulnerability", "phishing", "software", "network"]),
     ],
@@ -83,6 +83,23 @@ _LEX: dict[str, list[tuple[float, list[str]]]] = {
         (0.3, ["media", "coverage", "criticism"]),
     ],
 }
+
+# Fact-checks quote the event they are debunking, so they light up the same
+# lexicon the real event would. "No, this video does not show a drone attack on
+# ships in Egypt" scored 53 — the highest of 3,577 stories — for an attack that
+# did not happen. Damped rather than zeroed: an active disinformation campaign
+# still carries some reputational and geopolitical weight, just not the weight
+# of the event it invents.
+#
+# Deliberately high-precision. Terms like "AI-generated" and "misinformation"
+# were tried and dropped: they also matched real stories, including an arrest
+# for circulating deepfakes.
+_DEBUNK = re.compile(
+    r"^\s*no[,:]|^\s*fact[- ]check|\bdoes not show\b|\bdid not happen\b|"
+    r"\bno evidence (?:that|of)\b|\bfalse claim|\bdebunk|\bhoax\b|"
+    r"\bfake (?:video|image|photo)\b|\bnot authentic\b|\bout of context\b",
+    re.IGNORECASE)
+_DEBUNK_DAMPING = 0.3
 
 _VELOCITY_CUES = {
     "Immediate": ["breaking", "unfolding", "ongoing now", "active shooter",
@@ -104,12 +121,73 @@ _LIKELIHOOD_CUES = {
 }
 
 
-def _score_dimension(text: str, groups: list[tuple[float, list[str]]]) -> float:
+# A few lexicon terms are strong signals literally and meaningless figuratively.
+# "attack on every veteran's service" and "Hostage to politics" both scored full
+# people-safety marks. Narrowing the pattern is better than damping the whole
+# story: the rest of the text may still carry real signal.
+_OVERRIDE: dict[str, str] = {
+    # Two readings to exclude. Plainly abstract objects ("attack on democracy"),
+    # and softer nouns that only read as figurative behind a determiner —
+    # "attack on every veteran's service" is rhetoric, "attack on rail services"
+    # is not, so the second branch requires one.
+    "attack on": (
+        r"\battack on\b"
+        r"(?!\s+(?:\S+\s+){0,3}?(?:democracy|freedom|free speech|science|truth|"
+        r"values?|rights?|institutions?|judiciary|press|way of life|livelihoods?)\b)"
+        r"(?!\s+(?:every|our|the|his|her|their)\s+(?:\S+\s+){0,2}?"
+        r"(?:service|reputation|character|integrity|record|dignity|honou?r)\b)"
+    ),
+    "hostage": r"\bhostages?\b(?!\s+to\b)",
+}
+
+
+def _compile(term: str) -> re.Pattern[str]:
+    """Turn a lexicon entry into a word-boundary pattern.
+
+    Plain substring matching was the original bug. "reported" contains "port",
+    so every story that reported anything scored full marks for supply-chain
+    disruption; "deadline" contains "dead", "politics" contains "ics", "couple"
+    contains "coup" and "toward" contains "war". Those are not edge cases —
+    "reported" appears in almost every article in the corpus.
+
+    A trailing '*' marks a deliberate stem ("casualt*" -> casualty, casualties)
+    and allows any suffix. Everything else matches as a whole word plus ordinary
+    English inflection, so "port" still catches "ports" but not "reported", and
+    "import" no longer catches "important".
+    """
+    if term in _OVERRIDE:
+        return re.compile(_OVERRIDE[term], re.IGNORECASE)
+    if term.endswith("*"):
+        return re.compile(r"\b" + re.escape(term[:-1]) + r"\w*")
+    term = term.strip()
+    if " " in term or "-" in term:            # phrases inflect on the last word
+        return re.compile(r"\b" + re.escape(term) + r"\w*")
+    core = re.escape(term)
+    if term.endswith("e"):                    # strike -> strikes, striking
+        stem = re.escape(term[:-1])
+        return re.compile(rf"\b(?:{core}[sd]?|{stem}(?:ing|ed))\b")
+    if term.endswith("y"):                    # penalty -> penalties
+        stem = re.escape(term[:-1])
+        return re.compile(rf"\b(?:{core}s?|{stem}(?:ies|ied))\b")
+    return re.compile(rf"\b{core}(?:s|es|ed|ing)?\b")
+
+
+_LEX_RE: dict[str, list[tuple[float, list[re.Pattern[str]]]]] = {
+    dim: [(w, [_compile(t) for t in terms]) for w, terms in groups]
+    for dim, groups in _LEX.items()
+}
+
+
+def _cues_re(cues: dict[str, list[str]]) -> dict[str, list[re.Pattern[str]]]:
+    return {level: [_compile(t) for t in terms] for level, terms in cues.items()}
+
+
+def _score_dimension(text: str, groups: list[tuple[float, list[re.Pattern[str]]]]) -> float:
     best = 0.0
     hits = 0
-    for weight, terms in groups:
-        for term in terms:
-            if term in text:
+    for weight, patterns in groups:
+        for pat in patterns:
+            if pat.search(text):
                 best = max(best, weight)
                 hits += 1
     if best == 0.0:
@@ -119,9 +197,17 @@ def _score_dimension(text: str, groups: list[tuple[float, list[str]]]) -> float:
     return min(1.0, best + bonus)
 
 
-def _pick_from_cues(text: str, cues: dict[str, list[str]], default: str) -> str:
-    for level, terms in cues.items():
-        if any(t in text for t in terms):
+_VELOCITY_RE = _cues_re(_VELOCITY_CUES)
+_LIKELIHOOD_RE = _cues_re(_LIKELIHOOD_CUES)
+_TREND_DETERIORATE_RE = [_compile(t) for t in _TREND_DETERIORATE]
+_TREND_IMPROVE_RE = [_compile(t) for t in _TREND_IMPROVE]
+
+
+def _pick_from_cues(text: str, cues: dict[str, list[re.Pattern[str]]],
+                    default: str) -> str:
+    """First matching level wins, so cue dicts are ordered most-urgent first."""
+    for level, patterns in cues.items():
+        if any(p.search(text) for p in patterns):
             return level
     return default
 
@@ -132,13 +218,16 @@ class HeuristicAnalyzer:
     def analyze(self, item: AnalysisInput) -> AnalysisResult:
         text = f"{item.headline}\n{item.body}".lower()
 
-        signals = {dim: _score_dimension(text, groups) for dim, groups in _LEX.items()}
+        signals = {dim: _score_dimension(text, groups)
+                   for dim, groups in _LEX_RE.items()}
         # Category prior: ensure the labelled category has at least some weight.
         _apply_category_prior(item.category, signals)
+        if _DEBUNK.search(item.headline or ""):
+            signals = {k: v * _DEBUNK_DAMPING for k, v in signals.items()}
 
-        velocity = _pick_from_cues(text, _VELOCITY_CUES, "Developing")
+        velocity = _pick_from_cues(text, _VELOCITY_RE, "Developing")
         trend = self._trend(text)
-        likelihood = _pick_from_cues(text, _LIKELIHOOD_CUES, "Possible")
+        likelihood = _pick_from_cues(text, _LIKELIHOOD_RE, "Possible")
 
         result = AnalysisResult(
             signals=signals,
@@ -152,8 +241,8 @@ class HeuristicAnalyzer:
 
     # -- narrative construction --------------------------------------------
     def _trend(self, text: str) -> str:
-        det = sum(1 for t in _TREND_DETERIORATE if t in text)
-        imp = sum(1 for t in _TREND_IMPROVE if t in text)
+        det = sum(1 for p in _TREND_DETERIORATE_RE if p.search(text))
+        imp = sum(1 for p in _TREND_IMPROVE_RE if p.search(text))
         if imp > det:
             return "Improving"
         if det >= 2:

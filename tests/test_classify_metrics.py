@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+import pytest
+
 from gsid.ingestion.classify import UNCLASSIFIED, classify
 
 # (headline, summary, feed_id, source_names, expected_category_or_None)
@@ -167,3 +169,102 @@ if __name__ == "__main__":  # pragma: no cover - manual report
         print(f"{c:<20} {m['precision']:>6.2f} {m['recall']:>7.2f} "
               f"{m['f1']:>6.2f} {m['support']:>4}")
     print(f"\noverall accuracy: {accuracy:.1%} on {len(DATASET)} labeled items")
+
+
+# --------------------------------------------------------------------------
+# Lexicon matching: the analyzer used plain `term in text`, so any word that
+# merely contained a keyword scored full marks for that dimension.
+# --------------------------------------------------------------------------
+class TestLexiconWordBoundaries:
+    """Substring matching inflated nearly every score in the corpus.
+
+    "reported" contains "port", so every story that reported anything scored
+    15/15 for supply-chain disruption — 32% of stories hit full marks on that
+    dimension. Fixing it dropped that to 7%.
+    """
+
+    @pytest.mark.parametrize("word, dimension", [
+        ("reported", "supply_chain"),     # port
+        ("important", "supply_chain"),    # import, port
+        ("support", "supply_chain"),      # port
+        ("transport", "supply_chain"),    # port
+        ("deadline", "people_safety"),    # dead
+        ("politics", "cyber_physical"),   # ics
+        ("economics", "cyber_physical"),  # ics
+        ("couple", "geopolitical"),       # coup
+        ("toward", "geopolitical"),       # war
+        ("billion", "regulatory"),        # bill
+        ("lawyer", "regulatory"),         # law
+        ("website", "facility_assets"),   # site
+    ])
+    def test_innocent_word_does_not_fire(self, word, dimension):
+        from gsid.analysis.heuristic import _LEX_RE, _score_dimension
+        assert _score_dimension(word, _LEX_RE[dimension]) == 0.0
+
+    @pytest.mark.parametrize("text, dimension", [
+        ("ports closed after storm", "supply_chain"),
+        ("imports halted at the border", "supply_chain"),
+        ("casualties confirmed", "people_safety"),
+        ("dozens injured in clashes", "people_safety"),
+        ("a coup attempt", "geopolitical"),
+        ("ransomware hit the control system", "cyber_physical"),
+    ])
+    def test_real_terms_still_fire(self, text, dimension):
+        from gsid.analysis.heuristic import _LEX_RE, _score_dimension
+        assert _score_dimension(text, _LEX_RE[dimension]) > 0.0
+
+    def test_stems_still_match_inflections(self):
+        """A trailing '*' marks a deliberate stem and must keep matching."""
+        from gsid.analysis.heuristic import _LEX_RE, _score_dimension
+        for word in ("casualty", "casualties", "fatalities", "evacuated"):
+            assert _score_dimension(word, _LEX_RE["people_safety"]) > 0.0
+
+
+class TestFactCheckDamping:
+    def test_debunk_scores_far_below_the_real_event(self):
+        """A fact-check quotes the event it debunks, so it lights the same terms."""
+        from gsid.analysis.base import AnalysisInput
+        from gsid.analysis.heuristic import HeuristicAnalyzer
+        from gsid.scoring import score_relevance
+
+        analyzer = HeuristicAnalyzer()
+
+        def score(headline):
+            r = analyzer.analyze(AnalysisInput(
+                headline=headline, body="", category="",
+                location_text="", sources=[]))
+            return score_relevance(r.signals).total
+
+        real = score("Drone attack on ships in Egypt kills three")
+        fake = score("No, this video does not show a drone attack on ships in Egypt")
+        assert fake < real
+
+    def test_real_story_about_deepfakes_is_not_damped(self):
+        """"AI-generated" was tried as a cue and dropped — it caught arrests."""
+        from gsid.analysis.heuristic import _DEBUNK
+        assert not _DEBUNK.search(
+            "Police nab scammer who circulated AI-generated deep fakes")
+
+
+class TestFigurativeUsage:
+    """The strongest people-safety terms are meaningless used figuratively."""
+
+    @pytest.mark.parametrize("text", [
+        "RSL says the slur was an attack on every veteran's service",
+        "Russians on the Goethe-Institut: hostage to politics",
+        "The ruling is an attack on democracy",
+        "An attack on the freedom of the press",
+    ])
+    def test_figurative_does_not_fire(self, text):
+        from gsid.analysis.heuristic import _LEX_RE, _score_dimension
+        assert _score_dimension(text.lower(), _LEX_RE["people_safety"]) == 0.0
+
+    @pytest.mark.parametrize("text", [
+        "attack on a police station",
+        "attack on rail services in Kyiv",
+        "gunman took three hostages",
+        "hostages released after standoff",
+    ])
+    def test_literal_still_fires(self, text):
+        from gsid.analysis.heuristic import _LEX_RE, _score_dimension
+        assert _score_dimension(text.lower(), _LEX_RE["people_safety"]) > 0.0

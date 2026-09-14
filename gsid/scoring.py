@@ -29,6 +29,26 @@ RELEVANCE_MODEL: list[tuple[str, int, str]] = [
 MODEL_MAX = sum(pts for _, pts, _ in RELEVANCE_MODEL)  # == 100
 
 
+# Impact tier boundaries.
+#
+# These are calibrated against the score distribution the analyzer actually
+# produces, not against the 0-100 nominal range. A single news item rarely
+# engages more than three of the eight dimensions, so the practical ceiling is
+# far below 100: measured over 3,577 heuristic-analysed stories on 2026-09-14,
+#
+#     median 12 | p75 20 | p90 28 | p95 32 | p99 41 | max 52
+#
+# which puts Critical at about p99 and High at about p95 — the rarity the
+# product brief describes. The brief's original 75/55 assumed scores used the
+# whole range; left in place they held 3% of stories between them and put a
+# deadly strike on a Kyiv warehouse below the cut for High.
+#
+# This couples the ladder to the analyzer: change the lexicon or the weights and
+# these need re-measuring. `python run.py --rescore --dry-run` prints the
+# resulting distribution, which is the check to run after any scoring change.
+IMPACT_THRESHOLDS = {"Critical": 40, "High": 32, "Moderate": 20}
+
+
 @dataclass
 class ScoreBreakdown:
     total: int
@@ -111,21 +131,13 @@ def derive_impact(score: int, signals: dict[str, float] | None = None) -> tuple[
     the honest place to say so is RELEVANCE_MODEL, where it is visible and
     explained, not in a bypass that silently contradicts it.
 
-    The boundaries moved with the override's removal. The brief's 75/55 assumed
-    scores spread across the range; the analyzer's actual distribution over
-    3,693 stories is compressed — median 20, p95 51, p99 70 — so those lines sat
-    in the far tail and left High and Critical holding 3% of stories between
-    them, with real events below the cut (a deadly strike on a Kyiv warehouse
-    scores 59). 70 and 50 sit at roughly p99 and p95, which is the rarity the
-    brief described, measured against the scores actually produced.
-
     Urgency keeps its life-safety override on purpose — see `derive_urgency`.
     """
-    if score >= 70:
+    if score >= IMPACT_THRESHOLDS["Critical"]:
         return "Critical", "Composite relevance is very high across dimensions."
-    if score >= 50:
+    if score >= IMPACT_THRESHOLDS["High"]:
         return "High", "Multiple material impact dimensions are engaged."
-    if score >= 30:
+    if score >= IMPACT_THRESHOLDS["Moderate"]:
         return "Moderate", "Some impact dimensions are engaged but contained."
     return "Low", "Few impact dimensions are engaged."
 

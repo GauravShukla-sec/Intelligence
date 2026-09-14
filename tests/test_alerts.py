@@ -58,16 +58,16 @@ def test_no_separate_score_floor():
     promoting a quarter of all stories on life-safety alone. With impact derived
     from the score, keeping the floor dropped the alert rate to 0.1%.
     """
-    for score in (50, 60, 70, 92):
-        impact = "Critical" if score >= 70 else "High"
+    for score in (32, 36, 40, 52):
+        impact = "Critical" if score >= 40 else "High"
         assert is_critical_alert(score, "Immediate", impact, "High",
                                  event_time=_iso(1), now=NOW) is True
 
 
 def test_impact_tier_is_what_gates_alerts():
-    assert is_critical_alert(49, "Immediate", "Moderate", "High",
+    assert is_critical_alert(31, "Immediate", "Moderate", "High",
                              event_time=_iso(1), now=NOW) is False
-    assert is_critical_alert(50, "Immediate", "High", "High",
+    assert is_critical_alert(32, "Immediate", "High", "High",
                              event_time=_iso(1), now=NOW) is True
 
 

@@ -47,9 +47,9 @@ def test_derive_impact_ignores_life_safety_override():
     22% of the corpus Critical at a median relevance of 30. people_safety is
     already worth 20 of the 100 points; the tier must not count it twice.
     """
-    assert derive_impact(30, {"people_safety": 1.0})[0] == "Moderate"
-    assert derive_impact(20, {"people_safety": 1.0})[0] == "Low"
-    assert derive_impact(70, {"people_safety": 0.0})[0] == "Critical"
+    assert derive_impact(20, {"people_safety": 1.0})[0] == "Moderate"
+    assert derive_impact(19, {"people_safety": 1.0})[0] == "Low"
+    assert derive_impact(40, {"people_safety": 0.0})[0] == "Critical"
 
 
 def test_derive_impact_is_monotonic_in_score():
@@ -87,5 +87,5 @@ def test_geo_scope_scaling():
 
 def test_alert_gating_rejects_unverified_low_impact():
     assert is_critical_alert(80, "Immediate", "Moderate", "Unverified") is False
-    assert is_critical_alert(70, "Immediate", "Critical", "High") is True
-    assert is_critical_alert(80, "7 Days", "Critical", "High") is False
+    assert is_critical_alert(40, "Immediate", "Critical", "High") is True
+    assert is_critical_alert(45, "7 Days", "Critical", "High") is False
