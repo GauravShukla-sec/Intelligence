@@ -147,14 +147,25 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 .brand-text strong { font-size: .98rem; }
 .brand-text span { font-size: .74rem; color: var(--text-mute); text-transform: uppercase; letter-spacing: .08em; }
 
-.nav { display: flex; flex-direction: column; padding: .6rem; gap: 2px; overflow-y: auto; flex: 1; }
+.nav { display: flex; flex-direction: column; padding: .7rem .6rem; gap: 3px; overflow-y: auto; flex: 1; }
 .nav a {
-  display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem;
-  color: var(--text-dim); border-radius: var(--radius-sm); font-size: .9rem; font-weight: 500;
+  display: flex; align-items: center; gap: .7rem; padding: .62rem .75rem;
+  color: var(--text-dim); border-radius: var(--radius-sm); font-size: .9rem; font-weight: 450;
+  letter-spacing: -.005em;
+  transition: background .18s ease, color .18s ease;
 }
 .nav a:hover { background: var(--panel); color: var(--text); text-decoration: none; }
 .nav a.active { background: var(--panel-2); color: var(--text); box-shadow: inset 3px 0 0 var(--accent); }
-.nav-ico { width: 18px; text-align: center; color: var(--accent); font-size: .95rem; }
+.nav-ico {
+  width: 18px; height: 18px; flex: 0 0 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-mute);
+}
+.nav-ico svg { width: 18px; height: 18px; display: block; }
+/* Icons stay quiet until the row matters — colouring every icon made the
+   sidebar read as a list of warnings rather than navigation. */
+.nav a:hover .nav-ico, .nav a.active .nav-ico { color: var(--accent); }
+.btn-ico { width: 16px; height: 16px; vertical-align: -3px; }
 .nav-badge {
   margin-left: auto; background: var(--sev-critical); color: #fff; font-size: .7rem;
   padding: 1px 7px; border-radius: 999px; font-weight: 700;
@@ -203,11 +214,11 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 .view { max-width: 1200px; margin: 0 auto; }
 
 /* ---------------- Common components ---------------- */
-.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.6rem; flex-wrap: wrap; }
-.page-head h1 { font-size: 1.9rem; margin: 0; }
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 2.1rem; flex-wrap: wrap; }
+.page-head h1 { font-size: 2.15rem; font-weight: 650; letter-spacing: -.035em; margin: 0; }
 .page-head .sub { color: var(--text-mute); font-size: .9rem; max-width: 74ch; }
 
-.grid { display: grid; gap: 1rem; }
+.grid { display: grid; gap: 1.25rem; }
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
@@ -216,9 +227,9 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 
 .panel {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 1.35rem 1.4rem; box-shadow: var(--shadow-sm);
+  padding: 1.7rem 1.8rem; box-shadow: var(--shadow-sm);
 }
-.panel h2 { font-size: 1.12rem; letter-spacing: -.015em; display: flex; align-items: center; gap: .5rem; }
+.panel h2 { font-size: 1.06rem; font-weight: 600; letter-spacing: -.018em; display: flex; align-items: center; gap: .5rem; margin-bottom: .9rem; }
 .panel .panel-sub { color: var(--text-mute); font-size: .82rem; margin-top: -.3rem; }
 .section-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-mute); margin: 1.4rem 0 .6rem; }
 
@@ -228,20 +239,37 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 
 /* Chips / badges (label + icon, colourblind safe) */
 .chip {
-  display: inline-flex; align-items: center; gap: .3rem; font-size: .74rem; font-weight: 600;
-  padding: .18rem .5rem; border-radius: 6px; border: 1px solid var(--border-2);
-  background: var(--panel-2); color: var(--text-dim); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .745rem; font-weight: 500; letter-spacing: -.005em;
+  padding: .22rem .55rem; border-radius: 999px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--panel-3) 70%, transparent);
+  color: var(--text-dim); white-space: nowrap;
 }
-.chip .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
-.chip .ico { font-size: .8rem; }
+.chip .dot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+/* The shape glyph carries meaning for colourblind readers, so it stays — but
+   at a quieter size it reads as a mark rather than as punctuation. */
+.chip .ico { font-size: .72rem; opacity: .9; line-height: 1; }
 
-.sev-critical { color: var(--sev-critical); border-color: color-mix(in srgb, var(--sev-critical) 55%, var(--border)); }
+.sev-critical { color: var(--sev-critical); }
+/* Tint only the pill. These classes are also used on bare numbers and
+   text (KPI tiles), where a filled background reads as a colour block. */
+.chip.sev-critical { background: color-mix(in srgb, var(--sev-critical) 13%, transparent); border-color: color-mix(in srgb, var(--sev-critical) 22%, transparent); }
 .sev-critical .dot { background: var(--sev-critical); }
-.sev-high { color: var(--sev-high); border-color: color-mix(in srgb, var(--sev-high) 55%, var(--border)); }
+.sev-high { color: var(--sev-high); }
+/* Tint only the pill. These classes are also used on bare numbers and
+   text (KPI tiles), where a filled background reads as a colour block. */
+.chip.sev-high { background: color-mix(in srgb, var(--sev-high) 13%, transparent); border-color: color-mix(in srgb, var(--sev-high) 22%, transparent); }
 .sev-high .dot { background: var(--sev-high); }
-.sev-moderate { color: var(--sev-moderate); border-color: color-mix(in srgb, var(--sev-moderate) 55%, var(--border)); }
+.sev-moderate { color: var(--sev-moderate); }
+/* Tint only the pill. These classes are also used on bare numbers and
+   text (KPI tiles), where a filled background reads as a colour block. */
+.chip.sev-moderate { background: color-mix(in srgb, var(--sev-moderate) 13%, transparent); border-color: color-mix(in srgb, var(--sev-moderate) 22%, transparent); }
 .sev-moderate .dot { background: var(--sev-moderate); }
-.sev-low { color: var(--sev-low); border-color: color-mix(in srgb, var(--sev-low) 55%, var(--border)); }
+.sev-low { color: var(--sev-low); }
+/* Tint only the pill. These classes are also used on bare numbers and
+   text (KPI tiles), where a filled background reads as a colour block. */
+.chip.sev-low { background: color-mix(in srgb, var(--sev-low) 13%, transparent); border-color: color-mix(in srgb, var(--sev-low) 22%, transparent); }
 .sev-low .dot { background: var(--sev-low); }
 /* "New today" — accent-filled so fresh items stand out (not a severity) */
 .sev-new {
@@ -265,13 +293,16 @@ body.has-banner .main { padding-top: calc(var(--topbar-h) + 3rem); }
 /* Story cards */
 .story-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 1rem; display: flex; flex-direction: column; gap: .6rem; cursor: pointer;
-  transition: border-color .15s, transform .15s;
+  padding: 1.35rem 1.4rem; display: flex; flex-direction: column; gap: .75rem; cursor: pointer;
+  transition: border-color .22s ease, transform .22s ease, box-shadow .22s ease;
 }
-.story-card:hover { border-color: var(--border-2); transform: translateY(-2px); }
+.story-card:hover {
+  border-color: var(--border-2); transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(0,0,0,.28);
+}
 .story-card .sc-top { display: flex; justify-content: space-between; gap: .5rem; align-items: center; }
-.story-card h3 { font-size: 1rem; margin: 0; }
-.story-card .sc-meta { display: flex; flex-wrap: wrap; gap: .35rem; }
+.story-card h3 { font-size: 1.02rem; font-weight: 600; letter-spacing: -.014em; line-height: 1.35; margin: 0; }
+.story-card .sc-meta { display: flex; flex-wrap: wrap; gap: .4rem; }
 .story-card .sc-sum { color: var(--text-dim); font-size: .86rem; margin: 0; }
 .story-card .sc-foot { display: flex; justify-content: space-between; align-items: center; color: var(--text-mute); font-size: .76rem; }
 
@@ -552,13 +583,13 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 .lvl-severe, .lvl-critical { background: var(--sev-critical); }
 .hp-reason { color: var(--text-dim); margin: 0 0 .9rem; max-width: 62ch; font-size: .92rem; }
 
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: .7rem; }
-.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .7rem .8rem; }
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9rem; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 1rem 1.1rem; }
 .kpi-link { display: block; color: inherit; text-decoration: none; transition: border-color .12s, transform .12s; }
 .kpi-link:hover, .kpi-link:focus-visible { border-color: var(--accent); transform: translateY(-1px); outline: none; }
 .kpi-num { font-size: 1.55rem; font-weight: 700; line-height: 1; display: flex; align-items: baseline; gap: .3rem; }
 .kpi-ico { font-size: .8rem; }
-.kpi-lbl { font-size: .74rem; color: var(--text-mute); margin-top: .3rem; text-transform: uppercase; letter-spacing: .05em; }
+.kpi-lbl { font-size: .72rem; font-weight: 500; color: var(--text-mute); margin-top: .45rem; text-transform: uppercase; letter-spacing: .07em; }
 
 .dash-split { display: grid; grid-template-columns: 1.7fr 1fr; gap: 1.1rem; margin-bottom: .4rem; }
 .dash-rail { display: flex; flex-direction: column; gap: 1.1rem; }
