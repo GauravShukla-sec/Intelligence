@@ -46,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="re-run category classification over stored stories")
     parser.add_argument("--reclassify-rollback", action="store_true",
                         help="undo the most recent reclassification pass")
+    parser.add_argument("--geocode", action="store_true",
+                        help="geocode stored stories that have no coordinates")
     parser.add_argument("--dry-run", action="store_true",
                         help="with --reclassify: report changes without writing")
     args = parser.parse_args(argv)
@@ -95,6 +97,16 @@ def main(argv: list[str] | None = None) -> int:
             if args.dry_run:
                 log.info("dry run — nothing written. Re-run without --dry-run to apply.")
         conn.close()
+        return 0
+
+    if args.geocode:
+        from gsid.geocode_backfill import backfill
+        conn = db.connect(config.db_file)
+        db.init_db(conn)
+        report = backfill(conn, dry_run=args.dry_run)
+        conn.close()
+        if args.dry_run:
+            log.info("dry run — nothing written. Re-run without --dry-run to apply.")
         return 0
 
     if args.notify:

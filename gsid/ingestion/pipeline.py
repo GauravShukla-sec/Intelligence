@@ -19,6 +19,7 @@ from ..store import DraftClaim, DraftSource, StoryDraft, save_story
 from ..taxonomy import (
     advisory_destination, country_name, subject_countries,
 )
+from .. import geocode
 from ..db import utcnow
 
 log = logging.getLogger("gsid.pipeline")
@@ -228,10 +229,21 @@ class IngestionPipeline:
         # reports of one event, and only some publishers emit GeoRSS, so the
         # lead item is not necessarily the one that knows where it happened.
         lat = lon = None
+        place = ""
         for m in members:
             if getattr(m, "lat", None) is not None and getattr(m, "lon", None) is not None:
                 lat, lon = m.lat, m.lon
                 break
+
+        # No publisher coordinates: try to find a named place in the headline.
+        # Only GDACS and USGS emit GeoRSS, so without this the globe shows
+        # natural hazards and nothing else. The match must agree with the
+        # story's own country tags, so this can sharpen a location but never
+        # contradict one.
+        if lat is None and countries:
+            hit = geocode.locate(headline, countries)
+            if hit:
+                lat, lon, place = hit["lat"], hit["lon"], hit["city"]
 
         return StoryDraft(
             headline=headline,
@@ -239,7 +251,7 @@ class IngestionPipeline:
             category=category,
             classification=result.to_dict(),
             category_confidence=result.confidence,
-            location_text=location_text,
+            location_text=place or location_text,
             primary_country=primary_country,
             countries=countries,
             event_time=lead.published_at,
