@@ -213,7 +213,9 @@
     // hidden rather than moved, otherwise they would surface on the wrong
     // continent.
     function redraw() {
-      s.appendChild(grat);                       // keep graticule under nothing
+      // Update the graticule in place. Re-appending it moved the node to the
+      // end of the SVG, which in paint order put it ON TOP of every country and
+      // swallowed their clicks.
       grat.setAttribute("d", graticulePath(30));
       for (const [path, geom] of countryPaths) path.setAttribute("d", pathFor(geom));
       for (const [g, p] of dotNodes) {
@@ -234,7 +236,14 @@
   // Drag to spin. Pointer events cover mouse, trackpad and touch in one path;
   // setPointerCapture keeps the gesture alive when the cursor leaves the disc.
   function attachRotation(node, redraw) {
-    let dragging = false, lastX = 0, lastY = 0, raf = 0;
+    // `pending` is the gap between pressing and actually dragging. Capturing the
+    // pointer on pointerdown redirects the following pointerup — and the click
+    // the browser synthesises from it — to the capturing element, so every
+    // country click was being swallowed by the globe. Capture only once the
+    // pointer has genuinely moved, so a press-and-release stays a click.
+    let pending = false, dragging = false, lastX = 0, lastY = 0, raf = 0;
+    let downX = 0, downY = 0, pointerId = null;
+    const DRAG_THRESHOLD = 4;          // px of travel before it counts as a drag
     const MAX_TILT = 78 * RAD;
 
     function schedule() {
@@ -242,11 +251,17 @@
       raf = requestAnimationFrame(() => { raf = 0; redraw(); });
     }
     node.addEventListener("pointerdown", (e) => {
-      dragging = true; lastX = e.clientX; lastY = e.clientY;
-      node.setPointerCapture(e.pointerId);
-      node.classList.add("grabbing");
+      pending = true; dragging = false;
+      downX = lastX = e.clientX; downY = lastY = e.clientY;
+      pointerId = e.pointerId;
     });
     node.addEventListener("pointermove", (e) => {
+      if (pending && !dragging) {
+        if (Math.hypot(e.clientX - downX, e.clientY - downY) < DRAG_THRESHOLD) return;
+        dragging = true;
+        try { node.setPointerCapture(pointerId); } catch { /* pointer already gone */ }
+        node.classList.add("grabbing");
+      }
       if (!dragging) return;
       const box = node.getBoundingClientRect();
       // Scale by rendered size so a drag moves the same arc at any zoom.
@@ -257,12 +272,14 @@
       schedule();
     });
     const stop = (e) => {
-      if (!dragging) return;
-      dragging = false;
+      const wasDragging = dragging;
+      pending = false; dragging = false;
       node.classList.remove("grabbing");
-      if (e.pointerId !== undefined && node.hasPointerCapture?.(e.pointerId)) {
+      if (wasDragging && e.pointerId !== undefined
+          && node.hasPointerCapture?.(e.pointerId)) {
         node.releasePointerCapture(e.pointerId);
       }
+      pointerId = null;
     };
     node.addEventListener("pointerup", stop);
     node.addEventListener("pointercancel", stop);

@@ -450,8 +450,11 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
 .world-map:focus-visible { outline: none; }
 .world-map:focus-visible .globe-sphere { stroke: var(--focus); stroke-width: 2.5; }
 .world-map.grabbing { cursor: grabbing; }
-.globe-sphere { stroke: var(--border-2); stroke-width: 1; }
-.map-grat { fill: none; stroke: var(--border-2); stroke-width: .5; stroke-opacity: .45; }
+/* Both are decoration. Even correctly ordered they should never be able to
+   intercept a click meant for a country. */
+.globe-sphere { stroke: var(--border-2); stroke-width: 1; pointer-events: none; }
+.map-grat { fill: none; stroke: var(--border-2); stroke-width: .5; stroke-opacity: .45;
+  pointer-events: none; }
 /* Land must read clearly against the sphere: at --panel-3 it was the same
    value as the globe gradient, so the continents disappeared. */
 .map-country { fill: color-mix(in srgb, var(--text-mute) 34%, var(--panel-3));
