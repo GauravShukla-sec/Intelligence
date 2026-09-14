@@ -79,6 +79,8 @@ def list_stories(conn, filters: dict[str, Any] | None = None,
         add("trend = ?", filters["trend"])
     if filters.get("min_score") is not None:
         add("relevance_score >= ?", int(filters["min_score"]))
+    if filters.get("has_coords"):
+        add("lat IS NOT NULL AND lon IS NOT NULL")
     if filters.get("alerts_only"):
         add("is_alert = 1")
     if filters.get("verified_only"):

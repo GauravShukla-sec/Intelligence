@@ -62,6 +62,11 @@ class FeedItem:
     is_travel_advisory: bool = False
     subject_country: str = ""   # authoritative ISO of the advisory's DESTINATION
     advisory_level: int = 0     # normalized 1..4 (0 = n/a; see advisory_levels)
+    # Precise event coordinates, when the publisher provides them. GDACS and
+    # USGS emit GeoRSS on every item; those are real observed locations, not a
+    # country guess, which is the only kind worth plotting as a point.
+    lat: float | None = None
+    lon: float | None = None
 
 
 @dataclass
@@ -264,6 +269,34 @@ class FetchResult:
         return len(self.items)
 
 
+def _entry_coords(entry) -> tuple[float | None, float | None]:
+    """Precise coordinates from a feed entry, if the publisher supplies them.
+
+    Publishers disagree on encoding: GDACS and USGS emit GeoRSS, which
+    feedparser surfaces both as `where` (GeoJSON-shaped, lon/lat order) and as
+    W3C `geo_lat`/`geo_long`. Try both, and reject anything out of range rather
+    than plotting a story in the sea because a field was empty or transposed.
+    """
+    lat = lon = None
+    where = getattr(entry, "where", None)
+    if isinstance(where, dict) and where.get("type") == "Point":
+        coords = where.get("coordinates") or ()
+        if len(coords) >= 2:
+            lon, lat = coords[0], coords[1]      # GeoJSON is lon-first
+    if lat is None or lon is None:
+        lat = getattr(entry, "geo_lat", None)
+        lon = getattr(entry, "geo_long", None)
+    try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return None, None
+    if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+        return None, None
+    if lat == 0 and lon == 0:        # null island: an unset field, not a place
+        return None, None
+    return lat, lon
+
+
 class RssConnector:
     """Fetches and parses a single RSS/Atom feed with a hard timeout."""
 
@@ -300,6 +333,7 @@ class RssConnector:
                 getattr(entry, "published_parsed", None)
                 or getattr(entry, "updated_parsed", None)
             )
+            lat, lon = _entry_coords(entry)
             items.append(
                 FeedItem(
                     title=getattr(entry, "title", "").strip(),
@@ -315,6 +349,7 @@ class RssConnector:
                     region_hint=self.feed.region_hint,
                     category_hint=self.feed.category_hint,
                     is_travel_advisory=self.feed.is_travel_advisory,
+                    lat=lat, lon=lon,
                 )
             )
         log.info("fetched %d items from %s", len(items), self.feed.id)

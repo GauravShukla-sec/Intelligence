@@ -302,6 +302,18 @@ def _merge_into_existing(conn, story_id: str, draft: StoryDraft, actor: str) -> 
     """
     now = db.utcnow()
     changed = False
+
+    # Backfill coordinates onto a story we already knew about. Only some
+    # publishers emit GeoRSS, so an event first seen via a wire report gains a
+    # precise location when GDACS or USGS later covers it — and without this the
+    # map would only ever plot stories whose very first sighting carried coords.
+    if draft.lat is not None and draft.lon is not None:
+        row = conn.execute("SELECT lat, lon FROM story WHERE id=?", (story_id,)).fetchone()
+        if row is not None and (row["lat"] is None or row["lon"] is None):
+            conn.execute("UPDATE story SET lat=?, lon=? WHERE id=?",
+                         (draft.lat, draft.lon, story_id))
+            changed = True
+
     for s in draft.sources:
         if not s.url or not is_valid_url(s.url):
             continue

@@ -312,9 +312,12 @@ def create_app(config: Config | None = None) -> Flask:
 
     @app.get("/api/map")
     def map_points():
-        f = {"data_mode": data_mode_param()}
-        rows = repository.list_stories(get_conn(), f, limit=300)
-        pts = [r for r in rows if r.get("lat") is not None and r.get("lon") is not None]
+        f = {"data_mode": data_mode_param(), "has_coords": True}
+        # Ask for geolocated stories directly. Filtering a relevance-ranked page
+        # meant a story only appeared on the map if it also ranked in the top
+        # 300 — so precisely-located disaster alerts, which score low by design,
+        # were never plotted.
+        pts = repository.list_stories(get_conn(), f, limit=400)
         return jsonify({"points": pts,
                         "region_counts": repository.counts_by_region(get_conn(), data_mode_param()),
                         "country_risk": repository.country_risk(get_conn(), data_mode_param())})

@@ -57,12 +57,23 @@ class IngestionPipeline:
         # countries. Each advisory stands alone and is grouped by DESTINATION at
         # save time (dedup_key = "Travel advisory: <country>"), which is how one
         # story ends up with one citation per government.
-        news = [it for it in relevant if not it.is_travel_advisory]
+        # Items carrying precise coordinates stand alone, for the same reason
+        # travel advisories do: GDACS and USGS publish one alert per event with
+        # near-identical boilerplate titles ("Green forest fire notification in
+        # X"), which text similarity happily fuses. Two reports with different
+        # observed coordinates are different events whatever their wording, and
+        # fusing them put a Mozambique fire at Namibian coordinates.
+        geo_located = [it for it in relevant
+                       if not it.is_travel_advisory
+                       and getattr(it, "lat", None) is not None]
+        news = [it for it in relevant
+                if not it.is_travel_advisory and getattr(it, "lat", None) is None]
         advisories = [it for it in relevant if it.is_travel_advisory]
         news_texts = [f"{it.title} {it.summary}" for it in news]
         clusters = cluster_items(news_texts, threshold=0.5) if news_texts else []
         member_groups = [[news[i] for i in idx] for idx in clusters]
         member_groups += [[it] for it in advisories]
+        member_groups += [[it] for it in geo_located]
 
         saved = 0
         for members in member_groups:
@@ -213,6 +224,15 @@ class IngestionPipeline:
             countries = subject_countries(lead.title, body)
             primary_country = countries[0] if countries else ""
 
+        # Coordinates from any member that carried them. A cluster fuses several
+        # reports of one event, and only some publishers emit GeoRSS, so the
+        # lead item is not necessarily the one that knows where it happened.
+        lat = lon = None
+        for m in members:
+            if getattr(m, "lat", None) is not None and getattr(m, "lon", None) is not None:
+                lat, lon = m.lat, m.lon
+                break
+
         return StoryDraft(
             headline=headline,
             body=body,
@@ -226,6 +246,8 @@ class IngestionPipeline:
             status="advisory" if travel else "developing",
             sources=sources,
             claims=claims,
+            lat=lat,
+            lon=lon,
             is_demo=False,
         )
 
