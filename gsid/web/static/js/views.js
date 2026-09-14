@@ -695,7 +695,7 @@
     mount(node, async () => {
       const data = await API.mapData();
       const wrap = h("div");
-      wrap.appendChild(head("World / Region View", "Countries are shaded by risk. Click a country to filter its stories, or a marker to open the development."));
+      wrap.appendChild(head("World / Region View", "Shaded by activity in the last 30 days: colour is the worst impact recorded, depth is how much serious activity there is. Drag to turn the globe; click a country to filter its stories, or a marker to open the development."));
       wrap.appendChild(window.GSID_MAP.render(data,
         (id) => go("#/story/" + id),
         (iso) => go("#/stories?country=" + iso)));

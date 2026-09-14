@@ -119,7 +119,8 @@
            C.IMPACT_ICON ? (C.IMPACT_ICON[r.impact] || "•") : "•"),
          h("span", null, r.impact)]),
       h("span", { class: "gt-count" },
-        r.count + " development" + (r.count === 1 ? "" : "s")),
+        r.count + " in 30 days"
+        + (r.total && r.total > r.count ? " · " + r.total + " all time" : "")),
     ]);
     tip.appendChild(meta);
 
@@ -156,13 +157,13 @@
 
   function hideTip(tip) { tip.hidden = true; }
 
-  function riskOpacity(count) {
-    // On a flat map a high floor kept every shaded country legible. On a globe
-    // that made the whole sphere one colour, because "worst impact ever seen"
-    // is Critical for most countries. Volume now carries the weight: a country
-    // with one report reads faintly, a hotspot reads solid.
-    const n = Math.max(1, count);
-    return Math.min(0.92, 0.18 + Math.log(n + 1) / Math.log(40) * 0.74);
+  function riskOpacity(r) {
+    // Intensity tracks SEVERE volume (Critical/High in the window), not total
+    // story count — otherwise a heavily-covered but quiet country outshines a
+    // genuinely dangerous one. Hue still carries the worst impact, so a single
+    // Critical is visible; it just reads faintly until it is a pattern.
+    const n = Math.max(1, (r && (r.severe || r.count)) || 1);
+    return Math.min(0.92, 0.16 + Math.log(n + 1) / Math.log(30) * 0.76);
   }
 
   function buildSvg(geo, data, onPoint, onCountry) {
@@ -205,7 +206,7 @@
         // Inline style (not a presentation attribute) so it overrides the
         // .map-country class fill — SVG CSS rules beat fill="…" attributes.
         path.style.fill = IMPACT_COLOR[r.impact] || "var(--sev-moderate)";
-        path.style.fillOpacity = riskOpacity(r.count).toFixed(2);
+        path.style.fillOpacity = riskOpacity(r).toFixed(2);
         path.classList.add("has-risk");
       }
       const label = r

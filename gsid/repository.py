@@ -685,10 +685,26 @@ def counts_by_region(conn, data_mode: str | None = None) -> dict[str, int]:
 _IMPACT_RANK = {"Low": 1, "Moderate": 2, "High": 3, "Critical": 4}
 
 
-def country_risk(conn, data_mode: str | None = None) -> dict[str, dict]:
+# The choropleth window. "Worst impact ever recorded" made 53% of countries
+# Critical, because a country with enough stories eventually contains one —
+# which says more about coverage volume than about current risk.
+RISK_WINDOW_DAYS = 30
+
+
+def country_risk(conn, data_mode: str | None = None,
+                 window_days: int = RISK_WINDOW_DAYS) -> dict[str, dict]:
     """Per-country risk for the world map choropleth, keyed by ISO-2 (lower).
 
-    Each country gets its worst tracked impact and a development count.
+    Scoped to a recent window, so the map shows what is happening now rather
+    than everything that ever happened. Countries with nothing in the window are
+    omitted entirely and render as plain land.
+
+    Hue still comes from the WORST impact in the window — a map that hid a
+    Critical development behind a typical-case average would be worse than
+    useless. What differentiates is `severe`: how many Critical/High
+    developments there are, which drives opacity, so one serious story reads
+    faintly and a sustained hotspot reads solid.
+
     Travel advisories are excluded (they live in Travel Risk, not the map).
     """
     where = "(s.status IS NULL OR s.status != 'advisory')"
@@ -698,8 +714,9 @@ def country_risk(conn, data_mode: str | None = None) -> dict[str, dict]:
         where += " AND s.is_demo=0"
     # Ordered newest-first so the first few rows per country are also the
     # headlines worth previewing on hover — one pass, no extra query.
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=72)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(hours=72)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    window = (now - timedelta(days=window_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         f"SELECT sc.country AS c, s.impact AS impact, s.headline AS headline, "
         f"COALESCE(s.event_time, s.first_seen) AS seen "
@@ -711,15 +728,21 @@ def country_risk(conn, data_mode: str | None = None) -> dict[str, dict]:
         if not c:
             continue
         rank = _IMPACT_RANK.get(r["impact"], 0)
-        e = agg.setdefault(c, {"count": 0, "rank": 0, "impact": "Low",
-                               "recent": 0, "latest": []})
+        e = agg.setdefault(c, {"count": 0, "total": 0, "rank": 0, "impact": "Low",
+                               "recent": 0, "severe": 0, "latest": []})
+        e["total"] += 1                       # lifetime, for context on hover
+        seen = r["seen"] or ""
+        if seen < window:
+            continue                          # outside the window: context only
         e["count"] += 1
-        if (r["seen"] or "") >= cutoff:
+        if rank >= 3:                         # Critical or High
+            e["severe"] += 1
+        if seen >= cutoff:
             e["recent"] += 1
         if len(e["latest"]) < 3:
             e["latest"].append((r["headline"] or "").replace("[DEMO] ", "")[:110])
         if rank > e["rank"]:
             e["rank"], e["impact"] = rank, r["impact"] or "Low"
-    return {c: {"impact": v["impact"], "count": v["count"],
-                "recent": v["recent"], "latest": v["latest"]}
-            for c, v in agg.items()}
+    return {c: {"impact": v["impact"], "count": v["count"], "total": v["total"],
+                "recent": v["recent"], "severe": v["severe"], "latest": v["latest"]}
+            for c, v in agg.items() if v["count"]}
