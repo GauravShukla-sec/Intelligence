@@ -49,6 +49,8 @@ def rescore_all(conn, dry_run: bool = False) -> dict:
 
     analyzer = HeuristicAnalyzer()
     updates, moves = [], {}
+    final_scores: list[int] = []
+    tiers: dict[str, int] = {}
     alerts_before = alerts_after = 0
     rescored = 0
     for row in rows:
@@ -76,6 +78,8 @@ def rescore_all(conn, dry_run: bool = False) -> dict:
         )
         alerts_before += 1 if row["is_alert"] else 0
         alerts_after += 1 if alert else 0
+        final_scores.append(score)
+        tiers[impact] = tiers.get(impact, 0) + 1
         unchanged = (impact == row["impact"] and alert == bool(row["is_alert"])
                      and score == (row["relevance_score"] or 0)
                      and urgency == (row["urgency"] or ""))
@@ -108,11 +112,28 @@ def rescore_all(conn, dry_run: bool = False) -> dict:
                 (impact, alert, score, urgency, blob, sid))
         conn.commit()
 
-    scores = sorted(u[3] for u in updates)
     log.info("rescore: scanned=%d changed=%d relevance-rescored=%d "
              "alerts %d -> %d dry_run=%s",
              len(rows), len(updates), rescored, alerts_before, alerts_after, dry_run)
     return {"scanned": len(rows), "changed": len(updates), "rescored": rescored,
             "moves": moves, "alerts_before": alerts_before,
             "alerts_after": alerts_after, "dry_run": dry_run,
-            "score_max": scores[-1] if scores else 0}
+            "distribution": distribution(final_scores), "tiers": tiers}
+
+
+def distribution(scores: list[int]) -> dict:
+    """Percentiles of the resulting scores.
+
+    IMPACT_THRESHOLDS is calibrated against this, so a scoring change is not
+    finished until these are re-read. Reported on every run, dry or not, which
+    is the whole point of being able to dry-run it.
+    """
+    if not scores:
+        return {}
+    ordered = sorted(scores)
+
+    def at(p: int) -> int:
+        return ordered[min(int(len(ordered) * p / 100), len(ordered) - 1)]
+
+    return {"n": len(ordered), "median": at(50), "p75": at(75), "p90": at(90),
+            "p95": at(95), "p99": at(99), "max": ordered[-1]}

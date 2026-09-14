@@ -31,21 +31,26 @@ MODEL_MAX = sum(pts for _, pts, _ in RELEVANCE_MODEL)  # == 100
 
 # Impact tier boundaries.
 #
-# These are calibrated against the score distribution the analyzer actually
-# produces, not against the 0-100 nominal range. A single news item rarely
-# engages more than three of the eight dimensions, so the practical ceiling is
-# far below 100: measured over 3,577 heuristic-analysed stories on 2026-09-14,
+# Calibrated against the score distribution the analyzer actually produces, not
+# against the 0-100 nominal range. A single news item rarely engages more than
+# three of the eight dimensions, so the practical ceiling is far below 100.
+# Measured over 3,697 stored stories on 2026-09-14:
 #
-#     median 12 | p75 20 | p90 28 | p95 32 | p99 41 | max 52
+#     median 12 | p75 20 | p90 29 | p95 35 | p99 52 | max 72
 #
-# which puts Critical at about p99 and High at about p95 — the rarity the
-# product brief describes. The brief's original 75/55 assumed scores used the
-# whole range; left in place they held 3% of stories between them and put a
-# deadly strike on a Kyiv warehouse below the cut for High.
+# The tail there is model-analysed stories, which score higher than the
+# heuristic's. Over the 3,577 heuristic-analysed ones alone: p95 32, p99 41,
+# max 52. The boundaries below sit near those p95 and p99 marks, which is the
+# rarity the product brief describes for High and Critical.
+#
+# The brief's own 75/55 assumed scores used the whole range. Left in place they
+# held 3% of stories between them, with a deadly strike on a Kyiv warehouse
+# falling below the cut for High.
 #
 # This couples the ladder to the analyzer: change the lexicon or the weights and
-# these need re-measuring. `python run.py --rescore --dry-run` prints the
-# resulting distribution, which is the check to run after any scoring change.
+# these need re-measuring. `python run.py --rescore --dry-run` reports the
+# resulting distribution and tier counts without writing anything, which is the
+# check to run after any scoring change.
 IMPACT_THRESHOLDS = {"Critical": 40, "High": 32, "Moderate": 20}
 
 

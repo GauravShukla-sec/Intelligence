@@ -109,6 +109,16 @@ def main(argv: list[str] | None = None) -> int:
         conn.close()
         for move, n in sorted(report["moves"].items(), key=lambda kv: -kv[1]):
             log.info("  %-28s %d", move, n)
+        dist = report.get("distribution") or {}
+        if dist:
+            log.info("  score distribution  " + "  ".join(
+                f"{k} {dist[k]}" for k in ("median", "p75", "p90", "p95", "p99", "max")))
+            total = sum(report["tiers"].values()) or 1
+            log.info("  resulting tiers     " + "  ".join(
+                f"{t} {report['tiers'].get(t, 0)} ({100 * report['tiers'].get(t, 0) // total}%)"
+                for t in ("Critical", "High", "Moderate", "Low")))
+            log.info("  IMPACT_THRESHOLDS is calibrated to this — re-read it if "
+                     "the analyzer changed.")
         if args.dry_run:
             log.info("dry run — nothing written. Re-run without --dry-run to apply.")
         return 0
