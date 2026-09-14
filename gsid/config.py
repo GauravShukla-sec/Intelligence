@@ -93,6 +93,15 @@ class Config:
     # Empty = notifications disabled. Never commit this: it is a bearer secret.
     webhook_url: str = ""
 
+    # Restart the dev server when a .py file changes. Deliberately separate
+    # from debug: a long-running local service silently executing weeks-old
+    # code is a real hazard (it cost a full debugging session), but Werkzeug's
+    # debugger offers code execution through the browser and must not be the
+    # price of reloading.
+    auto_reload: bool = False
+    # Werkzeug's interactive debugger. Off unless explicitly asked for.
+    debug: bool = False
+
     default_timezone: str = "UTC"
 
     @property
@@ -136,5 +145,7 @@ def load_config(env_file: str | os.PathLike | None = None) -> Config:
                      or os.environ.get("GSID_ACCESS_TOKEN", "")),
         public_allow_refresh=_as_bool(os.environ.get("GSID_PUBLIC_ALLOW_REFRESH"), False),
         webhook_url=os.environ.get("GSID_WEBHOOK_URL", "").strip(),
+        auto_reload=_as_bool(os.environ.get("GSID_AUTO_RELOAD"), False),
+        debug=_as_bool(os.environ.get("GSID_DEBUG"), False),
         default_timezone=os.environ.get("GSID_DEFAULT_TIMEZONE", "UTC"),
     )

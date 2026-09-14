@@ -146,7 +146,14 @@ def main(argv: list[str] | None = None) -> int:
     app = create_app(config)
     log.info("Starting GSID on http://%s:%s (data_mode=%s, ai=%s)",
              config.host, config.port, config.data_mode, config.ai_provider)
-    app.run(host=config.host, port=config.port, debug=not config.is_production,
+    if config.auto_reload:
+        log.info("auto-reload enabled: the server restarts on .py changes")
+    # debug is NOT derived from the environment name any more. Werkzeug's
+    # debugger allows code execution from the browser, which should never be a
+    # side effect of running outside production — and reloading, which is what
+    # was actually wanted, is now its own flag.
+    app.run(host=config.host, port=config.port,
+            debug=config.debug, use_reloader=config.auto_reload,
             threaded=True)
     return 0
 
