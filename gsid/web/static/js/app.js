@@ -74,11 +74,22 @@
       return;
     }
 
-    // demo banner + mode badge
+    // demo banner + system status
     const mode = API.state.meta.data_mode;
-    const badge = document.getElementById("modeBadge");
-    badge.textContent = "Mode: " + mode + " · AI: " + API.state.meta.ai_provider;
-    badge.className = "mode-badge " + (mode === "demo" ? "demo" : mode === "live" ? "live" : "");
+    document.getElementById("modeBadge").textContent =
+      mode.toUpperCase() + " · " + API.state.meta.ai_provider;
+    document.getElementById("sysDot").className =
+      "sf-dot " + (mode === "demo" ? "demo" : "live");
+    // The top-bar pill states what the pipeline is doing, not what page you are
+    // on — the one piece of chrome that is about the system itself.
+    const pill = document.getElementById("statusPill");
+    const isDemo = mode === "demo";
+    pill.classList.toggle("is-demo", isDemo);
+    document.getElementById("statusText").textContent =
+      isDemo ? "DEMO DATA" : "INTELLIGENCE ACTIVE";
+    pill.title = isDemo
+      ? "Illustrative scenarios — not current news"
+      : "Live feeds ingesting · analyzer: " + API.state.meta.ai_provider;
     // Only pure demo mode is "not current news". Hybrid/live serve real feeds.
     if (mode === "demo") {
       document.getElementById("demoBanner").hidden = false;
@@ -136,9 +147,18 @@
   function startClock() {
     const el = document.getElementById("clock");
     function tick() {
+      const now = new Date();
       try {
-        el.textContent = new Intl.DateTimeFormat("en-GB", { timeStyle: "medium", timeZone: API.state.tz }).format(new Date());
-      } catch { el.textContent = new Date().toISOString().slice(11, 19) + "Z"; }
+        const t = new Intl.DateTimeFormat("en-GB",
+          { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: API.state.tz }).format(now);
+        // Zone abbreviation matters here: analysts read event times across
+        // zones, and a bare clock invites the wrong assumption about which.
+        const parts = new Intl.DateTimeFormat("en-GB",
+          { timeZone: API.state.tz, timeZoneName: "short" }).formatToParts(now);
+        const zone = (parts.find((x) => x.type === "timeZoneName") || {}).value || "";
+        el.textContent = t;
+        el.title = t + " " + zone + " (" + API.state.tz + ")";
+      } catch { el.textContent = now.toISOString().slice(11, 19); el.title = "UTC"; }
     }
     tick(); setInterval(tick, 1000);
   }
@@ -150,10 +170,28 @@
     if (q) location.hash = "#/search?q=" + encodeURIComponent(q);
   });
 
-  // ---------- nav toggle (mobile) ----------
+  // ---------- nav toggle ----------
+  // Two behaviours behind one control: on a wide screen it collapses the rail
+  // to icons (and the choice persists, because an operator sets it once); on a
+  // narrow one the rail is off-canvas, so it opens and closes instead.
+  const NARROW = "(max-width: 1024px)";
+  function isNarrow() { return window.matchMedia(NARROW).matches; }
+
+  if (API.LS.get("navCollapsed") === "1") document.body.classList.add("nav-collapsed");
+
   document.getElementById("menuToggle").addEventListener("click", (e) => {
-    document.body.classList.toggle("nav-open");
-    e.currentTarget.setAttribute("aria-expanded", document.body.classList.contains("nav-open"));
+    if (isNarrow()) {
+      document.body.classList.toggle("nav-open");
+      e.currentTarget.setAttribute("aria-expanded", document.body.classList.contains("nav-open"));
+    } else {
+      const collapsed = document.body.classList.toggle("nav-collapsed");
+      API.LS.set("navCollapsed", collapsed ? "1" : "0");
+      e.currentTarget.setAttribute("aria-expanded", String(!collapsed));
+    }
+  });
+  // Leaving narrow width must not strand the drawer class on a desktop layout.
+  window.matchMedia(NARROW).addEventListener("change", () => {
+    document.body.classList.remove("nav-open");
   });
 
   // ---------- modal close ----------
