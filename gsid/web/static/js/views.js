@@ -520,21 +520,52 @@
     const node = h("div");
     const meta = API.state.meta;
     const filters = Object.assign({ sort: "score" }, params || {});
-    const listWrap = h("div", { class: "grid grid-2" });
+    // View mode is a workspace preference, not a route: an analyst who works in
+    // the table should not be dropped back into cards on every navigation.
+    let mode = API.LS.get("storyView", "cards");
+    let savedOnly = false;
 
-    function sel(name, label, opts, includeAll) {
-      const s = h("select", { name, onchange: (e) => { filters[name] = e.target.value; refresh(); } });
-      if (includeAll) s.appendChild(h("option", { value: "" }, "All"));
-      opts.forEach((o) => s.appendChild(h("option", { value: o.value, selected: filters[name] === o.value ? "selected" : null }, o.label)));
-      return h("label", null, [label, s]);
-    }
+    const listWrap = h("div", { class: "story-list" });
+    const countEl = h("span", { class: "fb-count" }, "");
 
-    // Changing a filter used to blank the list and show "Loading intelligence…"
-    // for seconds, and a fast second change could race the first response back
-    // over the newer one. Keep current results on screen, mark the list busy,
-    // cancel the in-flight request, and ignore anything stale.
+    // Request handling below is unchanged: aborting the in-flight request and
+    // guarding on a sequence number is what stops a fast second filter change
+    // racing a stale response back over the newer one.
     let inflight = null;
     let requestSeq = 0;
+    let lastRows = [];
+
+    function draw(stories) {
+      listWrap.innerHTML = "";
+      let rows = stories;
+      if (savedOnly) {
+        const ids = new Set(API.savedLocal.all().map((x) => x.story_id));
+        rows = rows.filter((r) => ids.has(r.id));
+      }
+      countEl.textContent = rows.length
+        ? rows.length + (rows.length === 1 ? " development" : " developments")
+        : "";
+      if (!rows.length) {
+        listWrap.appendChild(UI.emptyState(
+          savedOnly ? "None of your saved intelligence matches these filters."
+                    : "No developments match these filters. Try widening the region or lowering the impact threshold."));
+        return;
+      }
+      if (mode === "table") {
+        listWrap.className = "story-list is-table";
+        listWrap.appendChild(storyTable(rows));
+      } else {
+        listWrap.className = "story-list is-cards";
+        rows.forEach((st) => listWrap.appendChild(UI.intelligenceCard(st, {
+          relTime: API.relTime,
+          onOpen: function (x) { location.hash = "#/story/" + x.id; },
+          footer: st.similar && st.similar.length
+            ? h("div", { class: "ic-similar" },
+                "+" + st.similar.length + " related report" + (st.similar.length > 1 ? "s" : ""))
+            : null,
+        })));
+      }
+    }
 
     async function refresh() {
       const seq = ++requestSeq;
@@ -543,11 +574,16 @@
       inflight = controller;
 
       const qs = new URLSearchParams();
-      Object.keys(filters).forEach((k) => { if (filters[k]) qs.set(k, filters[k]); });
+      Object.keys(filters).forEach((k) => {
+        if (k === "since_days") return;          // translated below
+        if (filters[k]) qs.set(k, filters[k]);
+      });
+      if (filters.since_days) {
+        qs.set("since", new Date(Date.now() - Number(filters.since_days) * 86400000).toISOString());
+      }
       qs.set("group", "1");  // collapse near-duplicate coverage into lead + similar
 
-      // Only the very first paint has nothing worth keeping on screen.
-      if (!listWrap.childElementCount) listWrap.appendChild(C.loading());
+      if (!listWrap.childElementCount) listWrap.appendChild(UI.loadingState("table", 6));
       listWrap.classList.add("is-busy");
       listWrap.setAttribute("aria-busy", "true");
 
@@ -560,35 +596,119 @@
         listWrap.classList.remove("is-busy");
         listWrap.removeAttribute("aria-busy");
         listWrap.innerHTML = "";
-        listWrap.appendChild(C.empty("Could not load stories: " + err.message));
+        listWrap.appendChild(UI.errorState("Could not load stories: " + err.message, refresh));
         return;
       }
       if (seq !== requestSeq) return;            // a newer response already won
 
       listWrap.classList.remove("is-busy");
       listWrap.removeAttribute("aria-busy");
-      listWrap.innerHTML = "";
-      if (!data.stories.length) { listWrap.appendChild(C.empty("No stories match these filters.")); return; }
-      data.stories.forEach((s) => listWrap.appendChild(C.storyCard(s, openStory)));
+      lastRows = data.stories || [];
+      draw(lastRows);
     }
 
-    const bar = h("div", { class: "filters" }, [
-      sel("category", "Category", meta.categories.map((c) => ({ value: c.id, label: c.name })), true),
-      sel("region", "Region", meta.regions.filter(r => r.id !== "global").map((r) => ({ value: r.id, label: r.name })), true),
-      sel("impact", "Impact", meta.scales.impact.map((v) => ({ value: v, label: v })), true),
-      sel("urgency", "Urgency", meta.scales.urgency.map((v) => ({ value: v, label: v })), true),
-      sel("confidence", "Confidence", meta.scales.confidence.map((v) => ({ value: v, label: v })), true),
-      sel("trend", "Trend", meta.scales.trend.map((v) => ({ value: v, label: v })), true),
-      sel("sort", "Sort", [{ value: "score", label: "Relevance" }, { value: "recent", label: "Most recent" }, { value: "urgency", label: "Urgency" }, { value: "watchlist", label: "Exposure to our watchlist" }]),
-      h("label", null, ["New today", h("input", { type: "checkbox", checked: filters.new_today === "1" ? "checked" : null, onchange: (e) => { filters.new_today = e.target.checked ? "1" : ""; refresh(); } })]),
-      h("label", null, ["Verified only", h("input", { type: "checkbox", onchange: (e) => { filters.verified_only = e.target.checked ? "1" : ""; refresh(); } })]),
-      h("label", null, ["Alerts only", h("input", { type: "checkbox", onchange: (e) => { filters.alerts_only = e.target.checked ? "1" : ""; refresh(); } })]),
-    ]);
+    function storyTable(rows) {
+      return UI.dataTable({
+        dense: true,
+        onRow: function (r) { location.hash = "#/story/" + r.id; },
+        empty: "No developments match these filters.",
+        columns: [
+          { key: "impact", label: "Sev", width: "56px",
+            sortValue: (r) => UI.sevMeta(r.impact).rank,
+            render: (r) => UI.severityBadge(r.impact, true) },
+          { key: "headline", label: "Development",
+            render: (r) => h("div", { class: "st-head" }, [
+              h("span", null, C.cleanHeadline(r.headline)),
+              r.is_alert ? h("span", { class: "ic-alert-flag" }, "ALERT") : null,
+            ].filter(Boolean)) },
+          { key: "location_text", label: "Location", width: "12%",
+            sortValue: (r) => r.location_text || r.region_name || "",
+            render: (r) => r.location_text || r.region_name || "\u2014" },
+          { key: "category_name", label: "Category", width: "14%",
+            render: (r) => UI.tag(r.category_name) },
+          { key: "urgency", label: "Urgency", width: "9%" },
+          { key: "confidence", label: "Confidence", width: "10%",
+            render: (r) => UI.confidenceBadge(r.confidence) },
+          { key: "relevance_score", label: "Score", width: "62px", align: "right", mono: true },
+          { key: "event_time", label: "Detected", width: "10%", align: "right", mono: true,
+            sortValue: (r) => r.event_time || r.first_seen || "",
+            render: (r) => API.relTime(r.event_time || r.first_seen) },
+        ],
+        rows: rows,
+      });
+    }
+
+    // ---- filter bar ----
+    function opts(list, allLabel) {
+      return [{ value: "", label: allLabel }].concat(list);
+    }
+    const fields = [
+      { type: "select", key: "category", label: "Category",
+        value: filters.category || "",
+        options: opts(meta.categories.map((c) => ({ value: c.id, label: c.name })), "All categories") },
+      { type: "select", key: "region", label: "Region",
+        value: filters.region || "",
+        options: opts(meta.regions.filter((r) => r.id !== "global").map((r) => ({ value: r.id, label: r.name })), "All regions") },
+      { type: "select", key: "country", label: "Country",
+        value: filters.country || "",
+        options: opts((meta.countries || []).map((c) => ({ value: c.code, label: c.name })), "All countries") },
+      { type: "select", key: "impact", label: "Impact",
+        value: filters.impact || "",
+        options: opts(meta.scales.impact.slice().reverse().map((v) => ({ value: v, label: v })), "Any impact") },
+      { type: "select", key: "confidence", label: "Confidence",
+        value: filters.confidence || "",
+        options: opts(meta.scales.confidence.slice().reverse().map((v) => ({ value: v, label: v })), "Any confidence") },
+      { type: "select", key: "urgency", label: "Urgency",
+        value: filters.urgency || "",
+        options: opts(meta.scales.urgency.map((v) => ({ value: v, label: v })), "Any urgency") },
+      // The API compares `since` as `last_updated >= ?` against an ISO
+      // timestamp, so the control sends a date. Sending a day count instead
+      // compares against the literal string and filters wrongly but silently.
+      { type: "select", key: "since_days", label: "Date range",
+        value: filters.since_days || "",
+        options: [{ value: "", label: "Any date" }, { value: "1", label: "Last 24 hours" },
+                  { value: "7", label: "Last 7 days" }, { value: "30", label: "Last 30 days" },
+                  { value: "90", label: "Last 90 days" }] },
+      { type: "select", key: "sort", label: "Sort",
+        value: filters.sort || "score",
+        options: [{ value: "score", label: "Sort: relevance" }, { value: "recent", label: "Sort: most recent" },
+                  { value: "urgency", label: "Sort: urgency" }, { value: "watchlist", label: "Sort: watchlist exposure" }] },
+      { type: "toggle", key: "alerts_only", label: "Alerts only", value: filters.alerts_only === "1" },
+      { type: "toggle", key: "verified_only", label: "Verified only", value: filters.verified_only === "1" },
+      { type: "toggle", key: "new_today", label: "New today", value: filters.new_today === "1" },
+      { type: "toggle", key: "saved_only", label: "Saved", value: false },
+    ];
+
+    const viewToggle = h("div", { class: "view-toggle", role: "group", "aria-label": "Result view" },
+      [["cards", "Cards"], ["table", "Table"]].map(([m, label]) =>
+        h("button", {
+          type: "button", class: "vt-btn" + (mode === m ? " is-on" : ""),
+          "aria-pressed": String(mode === m),
+          onclick: function (e) {
+            mode = m; API.LS.set("storyView", m);
+            e.currentTarget.parentElement.querySelectorAll(".vt-btn").forEach(function (b) {
+              const on = b === e.currentTarget;
+              b.classList.toggle("is-on", on);
+              b.setAttribute("aria-pressed", String(on));
+            });
+            draw(lastRows);
+          },
+        }, label)));
+
+    const bar = UI.filterBar(fields, function (v) {
+      Object.keys(v).forEach(function (k) {
+        if (k === "saved_only") { savedOnly = !!v[k]; return; }
+        filters[k] = typeof v[k] === "boolean" ? (v[k] ? "1" : "") : v[k];
+      });
+      refresh();
+    }, [countEl, viewToggle]);
 
     const wrap = h("div");
-    wrap.appendChild(head("Stories", "Filter, sort and open any development for the full intelligence template.",
+    wrap.appendChild(head("Stories",
+      "Every ingested development, filterable across region, category, impact, confidence and date.",
       [h("a", { class: "btn secondary small", href: "/api/export/stories.csv" }, "Export CSV"),
-       h("a", { class: "btn secondary small", href: "/api/export/stories.json" }, "Export JSON")]));
+       h("a", { class: "btn secondary small", href: "/api/export/stories.json" }, "Export JSON")],
+      "Intelligence feed"));
     wrap.appendChild(bar);
     wrap.appendChild(listWrap);
     node.appendChild(wrap);

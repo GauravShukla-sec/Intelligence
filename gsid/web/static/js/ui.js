@@ -282,9 +282,65 @@
     ]);
   }
 
+  // ---------------------------------------------------------------------
+  // Intelligence card
+  // ---------------------------------------------------------------------
+  /**
+   * Scannable story card. Field order is fixed across every surface so a
+   * reader's eye learns one layout: severity, then headline, then where, then
+   * what kind, then how well evidenced, then when.
+   * Optional fields are omitted rather than shown blank — an empty "Impact:"
+   * row reads as "no impact" instead of "not assessed".
+   */
+  function intelligenceCard(s, opts) {
+    opts = opts || {};
+    const href = "#/story/" + s.id;
+    const when = s.event_time || s.first_seen;
+    const kids = [
+      h("div", { class: "ic-top" }, [
+        severityBadge(s.impact),
+        s.urgency ? h("span", { class: "ic-urgency" }, s.urgency) : null,
+        s.is_alert ? h("span", { class: "ic-alert-flag", title: "Active critical alert" }, "ALERT") : null,
+        h("span", { class: "ic-when mono" }, opts.relTime ? opts.relTime(when) : ""),
+      ].filter(Boolean)),
+      h("h3", { class: "ic-head" }, h("a", { href: href }, cleanish(s.headline))),
+      s.summary ? h("p", { class: "ic-sum" }, truncateAt(s.summary, 190)) : null,
+      h("div", { class: "ic-meta" }, [
+        (s.location_text || s.region_name) ? h("span", { class: "ic-loc" }, [
+          h("span", { "aria-hidden": "true" }, "\u25CE "), s.location_text || s.region_name,
+        ]) : null,
+        s.category_name ? tag(s.category_name) : null,
+        confidenceBadge(s.confidence),
+        s.relevance_score != null
+          ? h("span", { class: "ic-score mono", title: "Relevance score" }, s.relevance_score + "/100")
+          : null,
+      ].filter(Boolean)),
+      opts.footer || null,
+    ];
+    const el = h("article", { class: "intel-card" }, kids.filter(Boolean));
+    if (opts.onOpen) {
+      el.classList.add("is-clickable");
+      el.tabIndex = 0;
+      el.setAttribute("role", "link");
+      el.addEventListener("click", function (e) {
+        if (e.target.closest("a,button")) return;   // let real links win
+        opts.onOpen(s);
+      });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); opts.onOpen(s); }
+      });
+    }
+    return el;
+  }
+  function cleanish(t) { return String(t || "").replace("[DEMO] ", ""); }
+  function truncateAt(t, n) {
+    t = String(t || "");
+    return t.length > n ? t.slice(0, n).trim() + "\u2026" : t;
+  }
+
   window.GSID_UI = {
     SEV, sevMeta, severityBadge, confidenceBadge, sourceBadge, tag,
-    metricCard, skeleton, loadingState, emptyState, errorState,
+    metricCard, intelligenceCard, skeleton, loadingState, emptyState, errorState,
     dataTable, filterBar,
   };
 })();

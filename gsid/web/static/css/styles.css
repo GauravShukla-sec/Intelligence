@@ -1244,3 +1244,63 @@ a.sb-label:hover { color: var(--accent); text-decoration: none; }
   .dash-row3 { grid-template-columns: 1fr; }
   .posture-card { flex-direction: column; align-items: flex-start; }
 }
+
+/* =========================================================================
+   INTELLIGENCE FEED
+   ========================================================================= */
+.story-list.is-cards {
+  display: grid; gap: .6rem;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+.story-list.is-table {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+}
+/* Refreshing dims the stale results instead of blanking the page, so the
+   operator keeps their place while a filter change is in flight. */
+.story-list.is-busy { opacity: .55; transition: opacity .12s ease; }
+
+.intel-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: .7rem .8rem; display: flex; flex-direction: column; gap: .35rem; min-width: 0;
+}
+.intel-card.is-clickable { cursor: pointer; }
+.intel-card.is-clickable:hover { border-color: var(--border-2); background: var(--panel-2); }
+.intel-card.is-clickable:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.ic-top { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.ic-urgency { font-size: .66rem; color: var(--text-mute); text-transform: uppercase; letter-spacing: .07em; }
+.ic-alert-flag {
+  font-size: .6rem; font-weight: 700; letter-spacing: .1em; font-family: var(--mono);
+  color: var(--sev-critical); border: 1px solid var(--sev-critical);
+  padding: 0 .25rem; border-radius: 2px;
+}
+.ic-when { font-size: .66rem; color: var(--text-mute); margin-left: auto; white-space: nowrap; }
+.ic-head { font-size: .875rem; font-weight: 550; line-height: 1.35; margin: 0; letter-spacing: -.008em; }
+.ic-head a { color: var(--text); }
+.ic-head a:hover { color: var(--accent); text-decoration: none; }
+.ic-sum {
+  font-size: .755rem; color: var(--text-dim); margin: 0; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ic-meta { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; margin-top: auto; padding-top: .15rem; }
+.ic-loc { font-size: .7rem; color: var(--text-mute); white-space: nowrap; }
+.ic-score { font-size: .68rem; color: var(--text-mute); margin-left: auto; }
+.ic-similar { font-size: .67rem; color: var(--text-mute); border-top: 1px solid var(--border); padding-top: .3rem; }
+
+.st-head { display: flex; align-items: center; gap: .4rem; }
+.st-head > span:first-child {
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.vt-btn {
+  background: var(--panel); border: 0; color: var(--text-mute);
+  padding: .3rem .6rem; font-size: .73rem; cursor: pointer; font-family: inherit;
+}
+.vt-btn + .vt-btn { border-left: 1px solid var(--border); }
+.vt-btn:hover { color: var(--text); }
+.vt-btn.is-on { background: var(--accent-soft); color: var(--accent); }
+.fb-count { font-size: .73rem; color: var(--text-mute); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 620px) {
+  .story-list.is-cards { grid-template-columns: 1fr; }
+}
