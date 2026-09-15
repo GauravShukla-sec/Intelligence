@@ -6,24 +6,67 @@
   const h = C.h;
   const Views = {};
 
-  function head(title, sub, actions) {
+  const UI = window.GSID_UI;
+  const CH = window.GSID_CHARTS;
+
+  function head(title, sub, actions, eyebrow) {
     return h("div", { class: "page-head" }, [
-      h("div", null, [h("h1", null, title), sub ? h("div", { class: "sub" }, sub) : null]),
-      actions ? h("div", { class: "btn-row" }, actions) : null,
+      h("div", { class: "ph-main" }, [
+        eyebrow ? h("div", { class: "ph-eyebrow" }, eyebrow) : null,
+        h("h1", null, title),
+        sub ? h("div", { class: "sub" }, sub) : null,
+      ]),
+      actions ? h("div", { class: "page-head-actions" }, actions) : null,
     ]);
   }
 
-  async function mount(node, builder) {
-    node.appendChild(C.loading());
+  /**
+   * Render a view asynchronously.
+   * `skel` picks the skeleton shape so the page does not jump when data lands.
+   * A failure shows a retry rather than a dead end — one bad endpoint should
+   * not cost the operator the whole page.
+   */
+  async function mount(node, builder, skel) {
+    node.innerHTML = "";
+    node.appendChild(UI.loadingState(skel || "line", 5));
     try {
       const content = await builder();
       node.innerHTML = "";
       node.appendChild(content);
     } catch (e) {
       node.innerHTML = "";
-      node.appendChild(h("div", { class: "empty" }, "Could not load: " + e.message));
+      node.appendChild(UI.errorState("Could not load this view: " + e.message,
+        function () { mount(node, builder, skel); }));
     }
   }
+
+  /**
+   * Fill a panel from its own request, after the page has already painted.
+   * Analytics panels need a 300-story fetch that would otherwise block the
+   * alerts and map above them, which are what an operator opens this page for.
+   */
+  function lazyPanel(host, builder, skel) {
+    host.appendChild(UI.loadingState(skel || "chart", 3));
+    Promise.resolve().then(builder).then(function (node) {
+      host.innerHTML = ""; host.appendChild(node);
+    }).catch(function (e) {
+      host.innerHTML = "";
+      host.appendChild(UI.errorState("Panel unavailable: " + e.message,
+        function () { host.innerHTML = ""; lazyPanel(host, builder, skel); }));
+    });
+  }
+
+  /** Panel with the standard header strip. */
+  function panel(title, action, body, cls) {
+    return h("section", { class: "panel " + (cls || "") }, [
+      h("div", { class: "panel-head" }, [
+        h("h2", null, title),
+        action || null,
+      ]),
+      body,
+    ]);
+  }
+  function panelLink(text, href) { return h("a", { class: "panel-act", href: href }, text); }
 
   // ============================ DASHBOARD ============================
   const POSTURE_PCT = { Low: 22, Guarded: 42, Elevated: 62, High: 80, Severe: 94, Critical: 96 };
@@ -37,152 +80,296 @@
   Views.dashboard = function () {
     const node = h("div");
     mount(node, async () => {
-      const brief = await API.brief();
+      // Two light requests for the fold; the 300-story analytics set is fetched
+      // afterwards by the row-3 panels so it cannot delay alerts or the map.
+      const [brief, map] = await Promise.all([API.brief(), API.mapData()]);
       const p = brief.global_risk_pulse;
-      const alertsCount = brief.critical_alerts.length;
-      const deter = p.regions_deteriorating.length;
-      const wrap = h("div");
+      const wrap = h("div", { class: "dash" });
 
-      wrap.appendChild(head("Executive Dashboard",
-        "Generated " + API.fmtTime(brief.generated_at) + " · " + brief.story_count + " developments tracked",
-        [h("a", { class: "btn secondary", href: "#/brief" }, "Open full Daily Brief")]));
+      wrap.appendChild(head(
+        "Executive Dashboard",
+        p.posture.reason,
+        [h("a", { class: "btn secondary", href: "#/brief" }, "Open Daily Brief"),
+         h("a", { class: "btn", href: "#/alerts" }, "Critical Alerts")],
+        "Global posture \u00b7 generated " + API.fmtTime(brief.generated_at)));
 
-      // ---- Hero: risk posture + KPI tiles ----
+      // ---- Row 1: posture + metrics -----------------------------------
       const lvl = p.posture.level;
       const pct = POSTURE_PCT[lvl] != null ? POSTURE_PCT[lvl] : 55;
-      const hero = h("section", { class: "hero-posture panel" }, [
-        h("div", { class: "hp-gauge" }, [
-          h("div", { class: "hp-ring", style: "--pct:" + pct + "%" }, [
-            h("div", { class: "hp-ring-inner" }, [
-              h("span", { class: "hp-pct num" }, pct + ""),
-              h("span", { class: "hp-of" }, "index"),
+      const countries = Object.keys(map.country_risk || {});
+      const severeCountries = countries.filter((c) =>
+        ["Critical", "High"].indexOf((map.country_risk[c] || {}).impact) >= 0);
+      const alertsCount = brief.critical_alerts.length;
+
+      wrap.appendChild(h("div", { class: "dash-row1" }, [
+        h("section", { class: "posture-card" }, [
+          h("div", { class: "pc-gauge", style: "--pct:" + pct + "%" }, [
+            h("div", { class: "pc-gauge-in" }, [
+              h("span", { class: "pc-num num" }, String(pct)),
+              h("span", { class: "pc-of" }, "INDEX"),
             ]),
           ]),
-        ]),
-        h("div", { class: "hp-body" }, [
-          h("div", { class: "hp-eyebrow" }, "Global risk posture"),
-          h("div", { class: "hp-level" }, [
-            h("span", { class: "hp-dot lvl-" + slug(lvl) }, ""),
-            h("span", null, lvl),
-          ]),
-          h("p", { class: "hp-reason" }, p.posture.reason),
-          h("div", { class: "kpi-row" }, [
-            kpi(brief.story_count, "Tracked", "◔", "", "#/stories"),
-            kpi(alertsCount, "Critical alerts", "▲", alertsCount ? "sev-critical" : "sev-info", "#/alerts"),
-            kpi(deter, "Regions worsening", "▼", deter ? "sev-high" : "sev-info", "#/regional"),
-            kpi(p.regions_improving.length, "Regions improving", "▲", p.regions_improving.length ? "sev-low" : "sev-info", "#/regional"),
+          h("div", { class: "pc-body" }, [
+            h("div", { class: "pc-eyebrow" }, "Global risk posture"),
+            h("div", { class: "pc-level lvl-" + slug(lvl) }, lvl),
+            h("p", { class: "pc-reason" }, p.posture.reason),
           ]),
         ]),
-      ]);
-      wrap.appendChild(hero);
-
-      // ---- Main split: top developments | side rail ----
-      const split = h("div", { class: "dash-split" });
-
-      // Top developments (ranked)
-      const devs = h("section", { class: "panel" }, [
-        h("div", { class: "sc-top" }, [
-          h("h2", null, "Top developments"),
-          h("a", { class: "sd-reason", href: "#/stories" }, "All stories →"),
+        h("div", { class: "metric-row dash-metrics" }, [
+          UI.metricCard({ label: "Critical alerts", value: alertsCount,
+            severity: alertsCount ? "Critical" : null, href: "#/alerts",
+            hint: alertsCount ? "requiring prompt action" : "none active" }),
+          UI.metricCard({ label: "Active stories", value: brief.story_count,
+            href: "#/stories", hint: "developments tracked" }),
+          UI.metricCard({ label: "Countries tracked", value: countries.length,
+            href: "#/map",
+            hint: severeCountries.length + " at high or critical impact" }),
+          UI.metricCard({ label: "Regions worsening", value: p.regions_deteriorating.length,
+            severity: p.regions_deteriorating.length ? "High" : null, href: "#/regional",
+            hint: p.regions_improving.length + " improving" }),
+          // Filled in below from a real count, not estimated from this payload.
+          (function () {
+            const card = h("div", { class: "metric-card mc-pending" }, [
+              h("div", { class: "mc-label" }, "New today"),
+              h("div", { class: "mc-value-row" }, h("span", { class: "mc-value num" }, "\u2014")),
+            ]);
+            API.stories("new_today=1&limit=300").then(function (r) {
+              const n = (r.stories || []).length;
+              card.replaceWith(UI.metricCard({ label: "New today", value: n,
+                href: "#/stories?new_today=1",
+                hint: n ? "first seen in the last 24h" : "nothing new since yesterday" }));
+            }).catch(function () {
+              card.replaceWith(UI.metricCard({ label: "New today", value: null,
+                hint: "count unavailable" }));
+            });
+            return card;
+          })(),
         ]),
-        h("ol", { class: "rank-list" }, brief.executive_snapshot.map((s, i) => rankItem(s, i))),
-      ]);
-      split.appendChild(devs);
+      ]));
 
-      // Side rail: movers + watch-next
-      const rail = h("div", { class: "dash-rail" }, [
-        moversCard(p),
-        h("section", { class: "panel" }, [
-          h("h2", null, "Watch next 24–72h"),
-          (p.watch_next && p.watch_next.length)
-            ? h("ul", { class: "watch-list" }, p.watch_next.map((w) =>
-                h("li", null, h("a", { href: "#/story/" + w.id }, C.cleanHeadline(w.headline)))))
-            : h("p", { class: "empty" }, "Nothing flagged for the next 24–72h."),
-        ]),
-      ]);
-      split.appendChild(rail);
-      wrap.appendChild(split);
+      // ---- Row 2: threat map + critical alerts rail --------------------
+      const mapHost = h("div", { class: "dash-map-host" });
+      const mapPanel = panel("Global threat picture",
+        panelLink("Open world view \u2192", "#/map"), mapHost, "flush dash-map");
+      // The globe owns its own render + interaction; reuse it rather than
+      // re-implementing, so click-through and rotation keep working.
+      try {
+        mapHost.appendChild(window.GSID_MAP.render(map,
+          function (pt) { location.hash = "#/story/" + pt.id; },
+          function (cc) { location.hash = "#/stories?country=" + cc; }));
+      }
+      catch (e) { mapHost.appendChild(UI.errorState("Map unavailable: " + e.message)); }
 
-      // ---- Pulse cards ----
-      wrap.appendChild(h("p", { class: "section-title" }, "Focus areas"));
-      wrap.appendChild(h("div", { class: "grid grid-3" }, [
-        pulseCard("Top regulatory", p.top_regulatory, "§"),
-        pulseCard("Top supply-chain", p.top_supply_chain, "⚓"),
-        pulseCard("Top employee-safety", p.top_employee_safety, "⚑"),
+      const alertRail = panel("Critical alerts",
+        panelLink("All \u2192", "#/alerts"),
+        alertsCount
+          ? h("ul", { class: "alert-rail" }, brief.critical_alerts.slice(0, 7).map(alertRailItem))
+          : UI.emptyState("No developments currently meet the alert threshold."),
+        "flush dash-alerts");
+
+      wrap.appendChild(h("div", { class: "dash-row2" }, [mapPanel, alertRail]));
+
+      // ---- Row 3: analytics (lazy) -------------------------------------
+      const trendHost = h("div"), regionHost = h("div"), catHost = h("div");
+      wrap.appendChild(h("div", { class: "dash-row3" }, [
+        panel("Intelligence volume \u2014 14 days", null, trendHost),
+        panel("Regional risk breakdown", panelLink("Regions \u2192", "#/regional"), regionHost),
+        panel("Threat category distribution", panelLink("Stories \u2192", "#/stories"), catHost),
+      ]));
+
+      // One fetch feeds all three panels.
+      const recent = API.stories("sort=recent&limit=300");
+      lazyPanel(trendHost, async () => volumeTrend((await recent).stories), "chart");
+      lazyPanel(regionHost, async () => regionSeverity((await recent).stories), "chart");
+      lazyPanel(catHost, async () => categoryDonut((await recent).stories), "chart");
+
+      // ---- Row 4: latest intelligence -----------------------------------
+      const feedHost = h("div");
+      wrap.appendChild(panel("Latest intelligence",
+        panelLink("All stories \u2192", "#/stories"), feedHost, "flush"));
+      lazyPanel(feedHost, async () => latestFeed((await recent).stories), "table");
+
+      // ---- Row 5: emerging risks + executive summary --------------------
+      wrap.appendChild(h("div", { class: "dash-row5" }, [
+        panel("Emerging risks & regional watch", panelLink("Regional \u2192", "#/regional"),
+          h("div", { class: "emerging" }, [
+            movers("Deteriorating", p.regions_deteriorating, "High"),
+            movers("Improving", p.regions_improving, "Low"),
+            p.emerging_hotspots && p.emerging_hotspots.length
+              ? h("div", { class: "em-block" }, [
+                  h("div", { class: "em-title" }, "Emerging hotspots"),
+                  h("div", { class: "em-tags" },
+                    p.emerging_hotspots.map((r) => UI.tag(r, "#/regional"))),
+                ])
+              : null,
+            (p.watch_next && p.watch_next.length)
+              ? h("div", { class: "em-block" }, [
+                  h("div", { class: "em-title" }, "Watch next 24\u201372h"),
+                  h("ul", { class: "watch-list" }, p.watch_next.map((w) =>
+                    h("li", null, h("a", { href: "#/story/" + w.id }, C.cleanHeadline(w.headline))))),
+                ])
+              : null,
+          ])),
+        panel("Executive summary", panelLink("Full brief \u2192", "#/brief"),
+          h("div", null, [
+            h("ol", { class: "exec-points" },
+              (brief.executive_talking_points || []).map((t) => h("li", null, t))),
+            h("div", { class: "exec-top" }, [
+              h("div", { class: "et-title" }, "Top ranked developments"),
+              h("ol", { class: "rank-list compact" },
+                brief.executive_snapshot.slice(0, 3).map((st, i) => rankItem(st, i))),
+            ]),
+          ])),
       ]));
 
       return wrap;
-    });
+    }, "metrics");
     return node;
   };
 
-  function slug(s) { return String(s || "").toLowerCase().replace(/[^a-z]/g, ""); }
+  // ---- dashboard parts ------------------------------------------------
+  function slug(str) { return String(str || "").toLowerCase().replace(/[^a-z]/g, ""); }
 
-  function kpi(num, label, sym, cls, href) {
-    const kids = [
-      h("div", { class: "kpi-num num " + (cls || "") }, [
-        h("span", { class: "kpi-ico", "aria-hidden": "true" }, sym), String(num),
-      ]),
-      h("div", { class: "kpi-lbl" }, label),
-    ];
-    // A tile with a target is a real link (keyboard-accessible, shows what's
-    // behind the number); otherwise it's a plain stat.
-    return href
-      ? h("a", { class: "kpi kpi-link", href, "aria-label": label + ": " + num }, kids)
-      : h("div", { class: "kpi" }, kids);
-  }
-
+  /** Ranked development row. Rebuilt on the kit's badges so the severity glyph
+   *  and confidence language match every other surface. */
   function rankItem(s, i) {
     const d = DIR_META[s.trend] || DIR_META["Stable"];
-    return h("li", { class: "rank-item", onclick: () => go("#/story/" + s.id), tabindex: "0",
-                     onkeydown: (e) => { if (e.key === "Enter") go("#/story/" + s.id); } }, [
+    return h("li", { class: "rank-item", tabindex: "0", role: "link",
+                     onclick: function () { location.hash = "#/story/" + s.id; },
+                     onkeydown: function (e) {
+                       if (e.key === "Enter" || e.key === " ") {
+                         e.preventDefault(); location.hash = "#/story/" + s.id;
+                       }
+                     } }, [
       h("div", { class: "rank-num num" }, String(i + 1)),
       h("div", { class: "rank-body" }, [
         h("div", { class: "rank-head", title: C.cleanHeadline(s.headline) }, C.cleanHeadline(s.headline)),
-        h("p", { class: "rank-why" }, s.why),
+        s.why ? h("p", { class: "rank-why" }, s.why) : null,
         h("div", { class: "rank-meta" }, [
-          s.score != null ? h("span", { class: "score-pill" }, [h("b", { class: "num" }, String(s.score)), "/100"]) : null,
-          s.impact ? C.impactChip ? C.impactChip(s.impact) : C.chip(s.impact, sevCls(s.impact), "●") : null,
-          s.category_name ? h("span", { class: "meta-tag" }, s.category_name) : null,
-          h("span", { class: "dir " + d.cls }, [h("span", { "aria-hidden": "true" }, d.sym + " "), s.direction]),
+          s.score != null ? h("span", { class: "score-pill mono" }, String(s.score) + "/100") : null,
+          s.impact ? UI.severityBadge(s.impact) : null,
+          s.category_name ? UI.tag(s.category_name) : null,
+          s.direction ? h("span", { class: "dir " + d.cls },
+            [h("span", { "aria-hidden": "true" }, d.sym + " "), s.direction]) : null,
+        ].filter(Boolean)),
+      ]),
+    ]);
+  }
+
+  function alertRailItem(a) {
+    return h("li", { class: "ar-item" }, [
+      h("a", { class: "ar-link", href: "#/story/" + a.id }, [
+        h("div", { class: "ar-top" }, [
+          UI.severityBadge(a.impact, true),
+          h("span", { class: "ar-time mono" }, API.relTime(a.event_time || a.first_seen)),
         ]),
+        h("div", { class: "ar-head" }, C.cleanHeadline(a.headline)),
+        h("div", { class: "ar-meta" }, [
+          a.region_name ? h("span", null, a.region_name) : null,
+          a.category_name ? h("span", null, a.category_name) : null,
+          a.confidence ? h("span", null, a.confidence) : null,
+        ].filter(Boolean)),
       ]),
     ]);
   }
 
-  function sevCls(v) {
-    return { Critical: "sev-critical", High: "sev-high", Moderate: "sev-moderate", Low: "sev-low" }[v] || "sev-info";
-  }
-
-  function moversCard(p) {
-    const row = (label, names, cls, sym) => h("div", { class: "mover-row" }, [
-      h("div", { class: "mover-head" }, [
-        h("span", { class: "mover-ico " + cls, "aria-hidden": "true" }, sym),
-        h("span", null, label),
-        h("span", { class: "mover-count num" }, String(names.length)),
+  function movers(title, regions, severity) {
+    if (!regions || !regions.length) return null;
+    return h("div", { class: "em-block" }, [
+      h("div", { class: "em-title" }, [
+        UI.severityBadge(severity, true), title,
+        h("span", { class: "em-count num" }, String(regions.length)),
       ]),
-      names.length ? h("div", { class: "tag-list" }, names.slice(0, 6).map((n) => h("span", { class: "region-tag" }, n)))
-                   : h("p", { class: "sd-reason" }, "No material change identified."),
-    ]);
-    return h("section", { class: "panel" }, [
-      h("h2", null, "Regional movers"),
-      row("Deteriorating", p.regions_deteriorating, "sev-high", "▼"),
-      row("Improving", p.regions_improving, "sev-low", "▲"),
+      h("div", { class: "em-tags" }, regions.map((r) => UI.tag(r, "#/regional"))),
     ]);
   }
 
-  function pulseCard(title, item, ico) {
-    return h("div", { class: "panel pulse-card" }, [
-      h("div", { class: "pulse-ico", "aria-hidden": "true" }, ico || "•"),
-      h("div", null, [
-        h("div", { class: "pulse-title" }, title),
-        item ? h("a", { class: "pulse-link", href: "#/story/" + item.id }, C.cleanHeadline(item.headline))
-             : h("p", { class: "empty" }, "No material item identified."),
+  /** Stories first seen per day, last 14 days. Real counts, no interpolation. */
+  function volumeTrend(stories) {
+    const byDay = {};
+    const today = new Date();
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 86400000).toISOString().slice(0, 10);
+      days.push(d); byDay[d] = 0;
+    }
+    (stories || []).forEach((s) => {
+      const d = (s.first_seen || "").slice(0, 10);
+      if (d in byDay) byDay[d]++;
+    });
+    const points = days.map((d) => ({ label: d, value: byDay[d] }));
+    const total = points.reduce((n, x) => n + x.value, 0);
+    if (!total) {
+      return UI.emptyState("No developments were first seen in the last 14 days.");
+    }
+    // Week over week, from the same real counts.
+    const last7 = points.slice(7).reduce((n, x) => n + x.value, 0);
+    const prev7 = points.slice(0, 7).reduce((n, x) => n + x.value, 0);
+    const delta = prev7 ? Math.round(((last7 - prev7) / prev7) * 100) : null;
+    return h("div", { class: "vt" }, [
+      h("div", { class: "vt-top" }, [
+        h("span", { class: "vt-num num" }, String(last7)),
+        h("span", { class: "vt-lab" }, "in the last 7 days"),
+        delta === null ? null
+          : h("span", { class: "vt-delta " + (delta > 0 ? "d-up" : delta < 0 ? "d-down" : "d-flat") },
+              (delta > 0 ? "+" : "") + delta + "% vs prior 7"),
+      ]),
+      CH.trendChart(points, { label: "Developments first seen per day" }),
+      h("div", { class: "vt-axis" }, [
+        h("span", null, points[0].label.slice(5)),
+        h("span", null, points[points.length - 1].label.slice(5)),
       ]),
     ]);
   }
 
-  // ============================ DAILY BRIEF ============================
+  function regionSeverity(stories) {
+    const by = {};
+    (stories || []).forEach((s) => {
+      const r = s.region_name || "Unattributed";
+      by[r] = by[r] || { label: r, counts: { Critical: 0, High: 0, Moderate: 0, Low: 0 }, href: "#/regional" };
+      if (s.impact in by[r].counts) by[r].counts[s.impact]++;
+    });
+    const groups = Object.keys(by).map((k) => by[k]).sort((a, b) =>
+      (b.counts.Critical * 3 + b.counts.High) - (a.counts.Critical * 3 + a.counts.High));
+    return CH.severityBars(groups.slice(0, 8), { label: "Impact by region" });
+  }
+
+  function categoryDonut(stories) {
+    const by = {};
+    (stories || []).forEach((s) => {
+      const c = s.category_name || "Unclassified";
+      by[c] = (by[c] || 0) + 1;
+    });
+    return CH.donutChart(
+      Object.keys(by).map((k) => ({ label: k, value: by[k] })),
+      { label: "Developments by category", centreLabel: "stories" });
+  }
+
+  function latestFeed(stories) {
+    const rows = (stories || []).slice(0, 12);
+    return UI.dataTable({
+      dense: true,
+      empty: "No developments have been ingested yet.",
+      onRow: function (r) { location.hash = "#/story/" + r.id; },
+      columns: [
+        { key: "impact", label: "Sev", width: "58px", sort: false,
+          sortValue: (r) => UI.sevMeta(r.impact).rank,
+          render: (r) => UI.severityBadge(r.impact, true) },
+        { key: "headline", label: "Development",
+          render: (r) => h("span", { class: "lf-head" }, C.cleanHeadline(r.headline)) },
+        { key: "location_text", label: "Location", width: "13%",
+          render: (r) => r.location_text || r.region_name || "\u2014" },
+        { key: "category_name", label: "Category", width: "15%",
+          render: (r) => UI.tag(r.category_name) },
+        { key: "confidence", label: "Confidence", width: "11%",
+          render: (r) => UI.confidenceBadge(r.confidence) },
+        { key: "event_time", label: "Detected", width: "11%", align: "right", mono: true,
+          render: (r) => API.fmtTime(r.event_time || r.first_seen) },
+      ],
+      rows: rows,
+    });
+  }
+
   Views.brief = function () {
     const node = h("div");
     mount(node, async () => {
