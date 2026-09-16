@@ -70,7 +70,14 @@ class IngestionPipeline:
         news = [it for it in relevant
                 if not it.is_travel_advisory and getattr(it, "lat", None) is None]
         advisories = [it for it in relevant if it.is_travel_advisory]
-        news_texts = [f"{it.title} {it.summary}" for it in news]
+        # Cluster on the HEADLINE only. Including the summary made the
+        # threshold unreachable: Jaccard over a token bag is dominated by the
+        # larger set, and these summaries run 111-737 characters, so union grows
+        # while intersection does not. Measured on the nine Leipzig
+        # drone-attack pairs, headline-only similarity is 0.50-0.88 and every
+        # pair merges; with summaries included it is 0.08-0.48 and none do. That
+        # is why only 9 dedup keys in 3,945 stories covered more than one story.
+        news_texts = [it.title for it in news]
         clusters = cluster_items(news_texts, threshold=0.5) if news_texts else []
         member_groups = [[news[i] for i in idx] for idx in clusters]
         member_groups += [[it] for it in advisories]

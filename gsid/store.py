@@ -26,7 +26,7 @@ from .taxonomy import (
     clamp_scale, LIKELIHOOD_LEVELS, TREND_LEVELS, VELOCITY_LEVELS,
     region_for_country,
 )
-from .ingestion.dedup import dedup_key
+from .ingestion.dedup import dedup_key, find_matching_story
 from .ingestion.sanitize import clean_content, is_valid_url
 
 log = logging.getLogger("gsid.store")
@@ -125,6 +125,22 @@ def save_story(conn, draft: StoryDraft, analyzer: AnalyzerProtocol,
     ).fetchone()
     if existing and not draft.story_id:
         return _merge_into_existing(conn, existing["id"], draft, actor)
+
+    # The exact key is the sorted top-8 headline tokens, so two outlets
+    # describing one event rarely produce the same one: "Germany says Russia
+    # behind Leipzig airport drone attack" and "...behind attempted drone attack
+    # at Leipzig airport" differ by a token and were stored twice. Fall back to
+    # the same similarity test the in-batch clusterer uses, against stored
+    # events, so an item merges the same way whether its sibling arrived in this
+    # run or an earlier one.
+    if not draft.story_id and draft.status != "advisory":
+        # Headline only, matching the in-batch clusterer: passing the body
+        # dilutes the similarity below any usable threshold.
+        match = find_matching_story(
+            conn, draft.headline, is_demo=draft.is_demo,
+            lat=draft.lat, lon=draft.lon)
+        if match:
+            return _merge_into_existing(conn, match, draft, actor)
 
     # -- run analyzer (provider-agnostic) --
     src_refs = [
@@ -352,6 +368,13 @@ def _merge_into_existing(conn, story_id: str, draft: StoryDraft, actor: str) -> 
     if changed:
         if draft.status == "advisory":
             _recompute_advisory(conn, story_id)
+        else:
+            # Corroboration has to be able to change the verdict, or appending a
+            # source is bookkeeping with no effect. `derive_confidence` reads
+            # exactly this — best tier, independent source count, whether any is
+            # primary — and the alert gate rejects Low/Unverified, so without
+            # this a second Tier-1 source could never promote a story.
+            _recompute_evidence(conn, story_id, actor)
         conn.execute("UPDATE story SET last_updated=? WHERE id=?", (now, story_id))
         db.audit(conn, actor, "merge_citation", "story", story_id,
                  "advisory level/citation change detected" if draft.status == "advisory"
@@ -359,6 +382,51 @@ def _merge_into_existing(conn, story_id: str, draft: StoryDraft, actor: str) -> 
     conn.commit()  # persist advisory_state last_seen even on a no-op run
     return story_id
 
+
+
+def _recompute_evidence(conn, story_id: str, actor: str = "system") -> dict:
+    """Re-derive confidence and alert eligibility from the citations on record.
+
+    Called after a merge appends sources. Returns what changed, so the audit
+    trail can attribute the promotion to corroboration rather than to a silent
+    re-score.
+    """
+    row = conn.execute(
+        "SELECT relevance_score, urgency, impact, confidence, status, event_time, "
+        "       is_alert FROM story WHERE id = ?", (story_id,)).fetchone()
+    if row is None:
+        return {}
+
+    ev = conn.execute(
+        "SELECT MIN(sr.tier) AS best_tier, "
+        "       COUNT(DISTINCT ct.source_id) AS sources, "
+        "       MAX(CASE WHEN ct.is_primary = 1 OR sr.tier = 1 THEN 1 ELSE 0 END) AS has_primary "
+        "  FROM citation ct JOIN source sr ON sr.id = ct.source_id "
+        " WHERE ct.story_id = ? AND COALESCE(ct.is_circular, 0) = 0", (story_id,)).fetchone()
+    if ev is None or not ev["sources"]:
+        return {}
+
+    confidence, reason = derive_confidence(
+        ev["best_tier"] or 4, ev["sources"], bool(ev["has_primary"]))
+    score = row["relevance_score"] or 0
+    alert = is_critical_alert(score, row["urgency"] or "", row["impact"] or "",
+                              confidence, status=row["status"],
+                              event_time=row["event_time"])
+
+    delta = {}
+    if confidence != row["confidence"]:
+        delta["confidence"] = [row["confidence"], confidence]
+    if alert != bool(row["is_alert"]):
+        delta["is_alert"] = [bool(row["is_alert"]), alert]
+    if not delta:
+        return {}
+
+    conn.execute("UPDATE story SET confidence = ?, is_alert = ? WHERE id = ?",
+                 (confidence, 1 if alert else 0, story_id))
+    db.audit(conn, actor, "recompute_evidence", "story", story_id,
+             f"{ev['sources']} independent source(s), best tier {ev['best_tier']}: "
+             + "; ".join(f"{k} {v[0]} -> {v[1]}" for k, v in delta.items()))
+    return delta
 
 # --------------------------------------------------------------------------
 # Travel-advisory consensus (Layer 2) + change-detection (Layer 3)
