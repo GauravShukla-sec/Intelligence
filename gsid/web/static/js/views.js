@@ -449,8 +449,7 @@
               "Official advisory changes detected in the last " + advisory.days + " days."),
             h("ul", { class: "bs-list" }, advisory.changes.slice(0, 8).map((ch) =>
               h("li", null, [
-                h("span", { class: "badge " + (ch.kind === "escalated" ? "sev-high" : ch.kind === "eased" ? "sev-low" : "sev-info") },
-                  ch.kind),
+                UI.movementBadge(ch.kind),
                 h("a", { href: "#/travel?country=" + (ch.country || "") },
                   ch.country_name || ch.country),
                 h("span", { class: "bs-where" }, ch.label || ("Level " + ch.level)),
@@ -654,7 +653,7 @@
     return h("article", { class: "alert-card sev-edge-" + slug(a.impact || "") }, [
       h("div", { class: "ac-top" }, [
         UI.severityBadge(a.impact),
-        a.urgency ? h("span", { class: "badge " + urgencyCls(a.urgency) }, a.urgency) : null,
+        UI.urgencyBadge(a.urgency),
         UI.confidenceBadge(a.confidence),
         a.category_name ? UI.tag(a.category_name) : null,
         h("span", { class: "ac-detected mono" },
@@ -681,10 +680,6 @@
           : null,
       ].filter(Boolean)),
     ].filter(Boolean));
-  }
-  function urgencyCls(v) {
-    return v === "Immediate" ? "sev-critical" : v === "24 Hours" ? "sev-high"
-         : v === "7 Days" ? "sev-moderate" : "sev-low";
   }
 
   // ============================ STORIES (list + filters) ============================
@@ -897,19 +892,58 @@
       const a = s.analysis || {};
       let confirmedOnly = false;
 
-      const wrap = h("div");
-      const backBtn = h("a", { class: "btn secondary small", href: "#/stories" }, "← Stories");
-      wrap.appendChild(h("div", { class: "btn-row", style: "margin-bottom:.6rem" }, [backBtn]));
-
-      // header
-      wrap.appendChild(h("div", { class: "detail-head" }, [
-        h("div", { class: "sc-meta" }, [C.chip(s.category_name, "", "▦"), C.chip(s.region_name, "", "◍"),
-          C.chip(s.location_text || "—", "", "⚑"), s.is_demo ? h("span", { class: "demo-tag" }, "demo data") : null,
-          s.is_alert ? C.chip("Critical alert", "sev-critical", "▲") : null]),
-        h("h1", null, C.cleanHeadline(s.headline)),
-        (() => { const rc = C.ratingChips(s); rc.classList.add("inferred"); return rc; })(),
-        h("div", { class: "sd-reason" }, "Event: " + API.fmtTime(s.event_time) + " · First seen: " + API.fmtTime(s.first_seen) + " · Last verified: " + API.fmtTime(s.last_updated) + " · Status: " + (s.status || "—")),
+      const wrap = h("div", { class: "record" });
+      wrap.appendChild(h("div", { class: "rec-crumb" }, [
+        h("a", { href: "#/stories" }, "Stories"),
+        h("span", { "aria-hidden": "true" }, "/"),
+        h("span", null, s.category_name || "Development"),
       ]));
+
+      // ---- record header ----------------------------------------------
+      // Assessment badges are marked `inferred` so "confirmed facts only" can
+      // strip them: they are the desk's judgement, not the source's claim.
+      const ratings = C.ratingChips(s);
+      ratings.classList.add("inferred");
+
+      const identifiers = [
+        ["Event time", API.fmtTime(s.event_time)],
+        ["First seen", API.fmtTime(s.first_seen)],
+        ["Last verified", API.fmtTime(s.last_updated)],
+        ["Status", s.status || "\u2014"],
+        ["Relevance", s.relevance_score != null ? s.relevance_score + "/100" : "\u2014"],
+        ["Record", s.id],
+      ];
+
+      wrap.appendChild(h("header", { class: "rec-head" }, [
+        h("div", { class: "rec-top" }, [
+          UI.severityBadge(s.impact),
+          UI.urgencyBadge(s.urgency),
+          UI.confidenceBadge(s.confidence),
+          s.is_alert ? h("span", { class: "ic-alert-flag" }, "ACTIVE ALERT") : null,
+          s.is_demo ? h("span", { class: "badge badge-quiet" }, "demo data") : null,
+        ].filter(Boolean)),
+        h("h1", { class: "rec-title" }, C.cleanHeadline(s.headline)),
+        h("div", { class: "rec-where" }, [
+          s.location_text ? h("span", null, [h("span", { "aria-hidden": "true" }, "\u25CE "), s.location_text]) : null,
+          s.region_name ? UI.tag(s.region_name) : null,
+          s.category_name ? UI.tag(s.category_name) : null,
+          s.geo_scope ? h("span", { class: "rec-scope" }, s.geo_scope + " scope") : null,
+        ].filter(Boolean)),
+        ratings,
+        h("dl", { class: "rec-ids" }, identifiers.map(function (kv) {
+          return [h("dt", null, kv[0]), h("dd", { class: "mono" }, kv[1])];
+        })),
+      ]));
+
+      // Map location, when the record carries coordinates. Only GDACS, USGS and
+      // headline-geocoded stories do, so this is absent more often than not.
+      if (s.lat != null && s.lon != null) {
+        wrap.appendChild(h("div", { class: "rec-geo" }, [
+          h("span", { class: "rec-geo-lab" }, "Plotted location"),
+          h("span", { class: "mono" }, Number(s.lat).toFixed(3) + ", " + Number(s.lon).toFixed(3)),
+          h("a", { class: "btn small secondary", href: "#/map" }, "Show on world view"),
+        ]));
+      }
 
       // "Confirmed facts only" hides every generated section (.inferred) and
       // filters claims to sourced facts, so what remains is evidence.
@@ -1515,29 +1549,56 @@
   // ============================ SAVED ============================
   Views.saved = function () {
     const node = h("div");
-    async function refresh(target) {
-      target.innerHTML = ""; target.appendChild(C.loading());
+    const list = h("div", { class: "story-list is-cards" });
+
+    async function refresh() {
+      list.innerHTML = "";
+      list.appendChild(UI.loadingState("table", 4, "Loading saved intelligence\u2026"));
       const items = API.savedLocal.all();
-      // Fetch each saved story on demand (tolerate ones that no longer exist).
+      // Each saved record is fetched on demand and failures are tolerated: a
+      // story can be removed upstream after it was saved.
       const stories = await Promise.all(items.map((it) =>
         API.story(it.story_id).catch(() => null)));
-      target.innerHTML = "";
       const live = stories.filter(Boolean);
-      if (!live.length) { target.appendChild(C.empty("No saved stories yet. Open a story and click ☆ Save.")); return; }
-      live.forEach((story) => {
-        const card = C.storyCard(story, openStory);
-        card.appendChild(h("button", { class: "btn small secondary", onclick: (e) => {
-          e.stopPropagation(); API.savedLocal.remove(story.id); refresh(target);
-        } }, "Remove"));
-        target.appendChild(card);
+      const missing = stories.length - live.length;
+
+      list.innerHTML = "";
+      if (!live.length) {
+        list.className = "";
+        list.appendChild(UI.emptyState(
+          "No saved intelligence yet. Open any development and use Save to keep it here.",
+          h("a", { class: "btn secondary", href: "#/stories" }, "Browse stories")));
+        return;
+      }
+      list.className = "story-list is-cards";
+      live.forEach(function (story) {
+        list.appendChild(UI.intelligenceCard(story, {
+          relTime: API.relTime,
+          onOpen: function (x) { location.hash = "#/story/" + x.id; },
+          footer: h("div", { class: "ic-actions" }, [
+            h("a", { class: "btn small secondary", href: "#/story/" + story.id }, "Open"),
+            h("button", { class: "btn small secondary", onclick: function (e) {
+              e.stopPropagation();
+              API.savedLocal.remove(story.id);
+              refresh();
+              C.toast("Removed from saved.");
+            } }, "Remove"),
+          ]),
+        }));
       });
+      if (missing) {
+        list.appendChild(h("p", { class: "bs-none" },
+          missing + " saved item" + (missing > 1 ? "s are" : " is") + " no longer available upstream."));
+      }
     }
+
     const wrap = h("div");
-    wrap.appendChild(head("Saved Stories", "Saved to this browser — private to you, no account needed."));
-    const list = h("div", { class: "grid grid-2" });
+    wrap.appendChild(head("Saved Intelligence",
+      "Kept in this browser only \u2014 private to you, and no account required. Clearing site data clears this list.",
+      null, "Your workspace"));
     wrap.appendChild(list);
     node.appendChild(wrap);
-    refresh(list);
+    refresh();
     return node;
   };
 
@@ -1650,22 +1711,35 @@
     mount(node, async () => {
       const audit = await API.audit();
       const wrap = h("div");
-      wrap.appendChild(head("Transparency & Audit", "How this desk sources, verifies and scores — plus an audit trail of automated analysis and manual changes."));
-      wrap.appendChild(h("div", { class: "grid grid-2" }, [
-        h("div", { class: "panel" }, [h("h2", null, "Source tiers"),
-          h("dl", { class: "kv" }, Object.entries(API.state.meta.source_tiers).flatMap(([k, v]) => [h("dt", null, "Tier " + k), h("dd", null, v)]))]),
-        h("div", { class: "panel" }, [h("h2", null, "Confidence model"),
-          h("ul", { class: "clean" }, [
-            h("li", null, "Confirmed — primary evidence + multiple reliable sources."),
-            h("li", null, "High — strongly corroborated, minor details unresolved."),
-            h("li", null, "Moderate — credible reporting, important details uncertain."),
-            h("li", null, "Low — limited or conflicting evidence."),
-            h("li", null, "Unverified — single-source / social / unsupported."),
-          ])]),
-      ]));
-      wrap.appendChild(h("div", { class: "panel", style: "margin-top:1rem" }, [
-        h("h2", null, "Relevance scoring model (0–100)"),
-        h("p", { class: "sd-reason" }, "People safety 20 · Facilities 15 · Operational 15 · Supply-chain 15 · Regulatory 15 · Geopolitical 10 · Cyber-physical 5 · Reputational 5. Each story explains every point awarded."),
+      wrap.appendChild(head("Transparency & Audit",
+        "How this desk sources, verifies and scores every development, with the audit trail of automated analysis and manual change behind it.",
+        null, "Governance"));
+
+      wrap.appendChild(h("div", { class: "audit-models" }, [
+        panel("Source tiers", null, h("dl", { class: "reg-grid" },
+          Object.keys(API.state.meta.source_tiers).flatMap(function (k) {
+            return [h("dt", null, "Tier " + k),
+                    h("dd", null, API.state.meta.source_tiers[k])];
+          }))),
+        panel("Confidence model", null, h("dl", { class: "reg-grid" }, [
+          rg("Confirmed", "Primary evidence corroborated by multiple reliable sources."),
+          rg("High", "Strongly corroborated; minor details unresolved."),
+          rg("Moderate", "Credible reporting; important details uncertain."),
+          rg("Low", "Limited or conflicting evidence."),
+          rg("Unverified", "Single-source, social, or otherwise unsupported."),
+        ])),
+        // Weights are the published model. Rendered as a chart so the shape of
+        // the model is visible, not just its arithmetic.
+        panel("Relevance model", panelLink("Scored 0\u2013100", "#/stories"), h("div", null, [
+          CH.barChart([
+            { label: "People safety", value: 20 }, { label: "Facilities / assets", value: 15 },
+            { label: "Operational", value: 15 }, { label: "Supply chain", value: 15 },
+            { label: "Regulatory", value: 15 }, { label: "Geopolitical", value: 10 },
+            { label: "Cyber-physical", value: 5 }, { label: "Reputational", value: 5 },
+          ], { label: "Maximum points per dimension" }),
+          h("p", { class: "bs-note" },
+            "Every story shows the points awarded on each dimension and why."),
+        ])),
       ]));
       // 200 undifferentiated rows is not an audit trail you can actually use,
       // so filter by actor/action and free text. Filtering is client-side over
@@ -1889,14 +1963,14 @@
       const q = "#/travel?country=" + trip.country + (trip.origin ? "&origin=" + trip.origin : "");
       window.location.hash = q;  // shareable
       briefHost.innerHTML = "";
-      briefHost.appendChild(C.loading());
+      briefHost.appendChild(UI.loadingState("line", 5, "Loading travel brief\u2026"));
       try {
         const tb = await API.travel(trip.country, trip.origin);
         briefHost.innerHTML = "";
         briefHost.appendChild(renderTravelBrief(tb));
       } catch (e) {
         briefHost.innerHTML = "";
-        briefHost.appendChild(C.empty("Could not load: " + e.message));
+        briefHost.appendChild(UI.errorState("Could not load the travel brief: " + e.message, run));
       }
     }
     function loadCountry(code) { trip.country = code; run(); }
@@ -1905,8 +1979,8 @@
       const prefs = await API.preferences();
       const wrap = h("div");
       wrap.appendChild(head("Travel Risk",
-        "Pick a destination for the official advisory and what your travellers should watch for. "
-        + "Add a traveller nationality to lead with the matching government's advice."));
+        "Official government advisory for a destination, plus the developments your travellers should be briefed on. Traveller nationality decides whose advisory leads and the entry/visa context \u2014 the risk picture itself is destination-based.",
+        null, "Duty of care"));
 
       // destination picker
       const select = h("select", { "aria-label": "Destination country" },
@@ -1920,21 +1994,27 @@
           .concat((meta.countries || []).map((c) => h("option", { value: c.code }, c.name))));
       originSel.onchange = (e) => { trip.origin = e.target.value; run(); };
 
-      wrap.appendChild(h("div", { class: "filters" }, [
-        h("label", null, ["Destination", select]),
-        h("label", null, ["Traveller nationality (optional)", originSel]),
-        h("span", { class: "sd-reason" }, "The risk picture is destination-based; nationality only decides whose advisory leads and entry/visa context."),
+      wrap.appendChild(h("div", { class: "travel-pick" }, [
+        h("div", { class: "tp-field" }, [
+          h("span", { class: "tp-lab" }, "Destination"), select,
+        ]),
+        h("div", { class: "tp-field" }, [
+          h("span", { class: "tp-lab" }, "Traveller nationality"), originSel,
+        ]),
       ]));
 
       // saved travel destinations as quick chips
       const saved = (prefs.travel_destinations || []);
       if (saved.length) {
-        wrap.appendChild(h("div", { class: "tag-list", style: "margin-bottom:.8rem" },
-          [h("span", { class: "sd-reason", style: "margin-right:.3rem" }, "Your watchlist:")].concat(
+        wrap.appendChild(h("div", { class: "tp-watchlist" },
+          [h("span", { class: "tp-lab" }, "Your destinations")].concat(
             saved.map((d) => {
               const code = resolveClientCountry(d, meta.countries);
-              return h("button", { class: "btn small secondary", onclick: () => code && loadCountry(code) },
-                "✈ " + d);
+              return h("button", {
+                class: "fb-toggle", disabled: code ? null : "disabled",
+                title: code ? "Open travel brief for " + d : d + " is not a recognised destination",
+                onclick: function () { if (code) loadCountry(code); },
+              }, d);
             }))));
       }
 

@@ -749,11 +749,25 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
     content: ""; position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 35;
   }
 }
-@media (max-width: 720px) {
+.sp-short { display: none; }
+@media (max-width: 860px) {
   .main { padding-left: .9rem; padding-right: .9rem; }
-  .search { max-width: none; }
+  /* The search field takes flex:1, which at 375px pushed the clock off the
+     right edge. Let it shrink instead of forcing the row wider than the
+     viewport. */
+  .search { max-width: none; min-width: 0; }
+  .search input { min-width: 0; }
   .tz-select, .clock-zone { display: none; }
   .sys-pill { padding: .25rem .4rem; }
+  /* Abbreviate rather than truncate: "INTELLIGENCE ACTIVE" pushed the pill off
+     the right edge at 375px. The long form stays for screen readers. */
+  .sp-long { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+  .sp-short { display: inline; }
+  #bellBtn { display: none; }
+  .topbar { gap: .45rem; padding: 0 .55rem; }
+  /* Minutes are enough on a phone; seconds cost the width the clock needs. */
+  .clock { min-width: 0; font-size: .72rem; }
+  .clock .sec { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1473,4 +1487,65 @@ a.sb-label:hover { color: var(--accent); text-decoration: none; }
   .brief-body { max-width: none; }
   body { background: #fff; color: #000; }
   .bs-body, .bs-head { color: #000; }
+}
+
+/* =========================================================================
+   INTELLIGENCE RECORD (story detail)
+   ========================================================================= */
+.rec-crumb { display: flex; align-items: center; gap: .4rem; font-size: .72rem; color: var(--text-mute); margin-bottom: .55rem; }
+.rec-crumb a { color: var(--text-mute); }
+.rec-crumb a:hover { color: var(--accent); }
+.rec-head { border-bottom: 1px solid var(--border); padding-bottom: .9rem; margin-bottom: .9rem; }
+.rec-top { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.rec-title {
+  font-size: 1.5rem; font-weight: 600; letter-spacing: -.022em; line-height: 1.24;
+  margin: 0 0 .45rem; max-width: 56ch;
+}
+.rec-where { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; font-size: .755rem; color: var(--text-dim); margin-bottom: .6rem; }
+.rec-scope { color: var(--text-mute); }
+/* Identifiers read as a record, not prose: a fixed grid of label/value pairs
+   that an analyst can cite from. */
+.rec-ids {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .4rem .9rem; margin: .75rem 0 0; padding-top: .65rem; border-top: 1px solid var(--border);
+}
+.rec-ids dt {
+  font-size: .615rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-mute);
+}
+.rec-ids dd { margin: 0; font-size: .745rem; color: var(--text-dim); }
+.rec-geo {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: .5rem .7rem; margin-bottom: .9rem; font-size: .755rem; color: var(--text-dim);
+}
+.rec-geo-lab {
+  font-size: .615rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-mute);
+}
+.rec-geo .btn { margin-left: auto; }
+
+/* ---- Travel picker ---- */
+.travel-pick {
+  display: flex; gap: .7rem; flex-wrap: wrap; align-items: flex-end;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: .65rem .8rem; margin-bottom: .7rem;
+}
+.tp-field { display: flex; flex-direction: column; gap: .2rem; min-width: 200px; }
+.tp-lab {
+  font-size: .615rem; font-weight: 600; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-mute);
+}
+.travel-pick select {
+  background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--radius-sm); padding: .35rem .5rem; font-size: .8rem; font-family: inherit;
+}
+.travel-pick select:focus { border-color: var(--accent); }
+.tp-watchlist { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; margin-bottom: .7rem; }
+.tp-watchlist .fb-toggle:disabled { opacity: .45; cursor: not-allowed; }
+
+.ic-actions { display: flex; gap: .35rem; border-top: 1px solid var(--border); padding-top: .4rem; }
+.audit-models {
+  display: grid; gap: .85rem; margin-bottom: .85rem;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
 }

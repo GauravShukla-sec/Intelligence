@@ -1,26 +1,38 @@
 /* GSID service worker — offline shell + last-known intelligence.
 
    Strategy:
-     app shell / static  → cache-first (fast launch, versioned)
+     JS / CSS            → network-first, cache only as an offline fallback, so
+                           a missed CACHE_VERSION bump can never ship stale code
+     fonts / icons       → cache-first (effectively immutable)
      GET /api/*          → network-first, fall back to the last cached response
                            so a traveller with no signal still sees the most
                            recent brief, advisory and stories
      navigations         → network-first, fall back to the cached shell
 
-   Bump CACHE_VERSION on every release, otherwise clients keep serving the old
-   JS/CSS from cache after a deploy. */
-const CACHE_VERSION = "gsid-v1";
+   CACHE_VERSION only partitions and evicts caches; correctness does not depend
+   on remembering to bump it, because code is never served cache-first.
+
+   Note: this worker was dead until the registration script moved out of
+   index.html — the app's CSP (script-src 'self') had been blocking the inline
+   registration, so none of the above ran in production. */
+const CACHE_VERSION = "gsid-v2";
 const SHELL_CACHE = CACHE_VERSION + "-shell";
 const DATA_CACHE = CACHE_VERSION + "-data";
 
+// Precached so a first-load-then-offline device still has a working app. Must
+// list every script index.html loads; ui.js and charts.js were added with the
+// command-centre redesign.
 const SHELL = [
   "/",
   "/static/css/styles.css",
   "/static/js/api.js",
   "/static/js/components.js",
+  "/static/js/ui.js",
+  "/static/js/charts.js",
   "/static/js/map.js",
   "/static/js/views.js",
   "/static/js/app.js",
+  "/static/js/sw-register.js",
   "/static/icons/icon-192.png",
   "/manifest.webmanifest",
 ];

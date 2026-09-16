@@ -56,6 +56,41 @@
     ]);
   }
 
+  /**
+   * Urgency badge. Borrows the severity palette because urgency and impact are
+   * read together, but carries its own glyph — a badge tinted with a severity
+   * colour and no glyph breaks the rule that colour is never the sole carrier,
+   * which is exactly how 24 of these shipped colour-only on first pass.
+   */
+  const URGENCY = {
+    "Immediate":  { cls: "sev-critical", glyph: "\u25D4" },
+    "24 Hours":   { cls: "sev-high",     glyph: "\u25D1" },
+    "7 Days":     { cls: "sev-moderate", glyph: "\u25D5" },
+    "Long-Term":  { cls: "sev-info",     glyph: "\u25CB" },
+  };
+  function urgencyBadge(level) {
+    if (!level) return null;
+    const m = URGENCY[level] || URGENCY["Long-Term"];
+    return h("span", { class: "badge " + m.cls, title: "Urgency: " + level }, [
+      h("span", { class: "badge-glyph", "aria-hidden": "true" }, m.glyph),
+      h("span", null, level),
+    ]);
+  }
+
+  /** Advisory movement badge (escalated / eased / revised). */
+  const MOVE = {
+    escalated: { cls: "sev-high", glyph: "\u25B2" },
+    eased:     { cls: "sev-low",  glyph: "\u25BC" },
+    revised:   { cls: "sev-info", glyph: "\u25C7" },
+  };
+  function movementBadge(kind) {
+    const m = MOVE[kind] || MOVE.revised;
+    return h("span", { class: "badge " + m.cls, title: "Advisory " + kind }, [
+      h("span", { class: "badge-glyph", "aria-hidden": "true" }, m.glyph),
+      h("span", null, kind),
+    ]);
+  }
+
   function sourceBadge(name, tier) {
     if (!name) return null;
     return h("span", {
@@ -339,7 +374,8 @@
   }
 
   window.GSID_UI = {
-    SEV, sevMeta, severityBadge, confidenceBadge, sourceBadge, tag,
+    SEV, sevMeta, severityBadge, confidenceBadge, urgencyBadge, movementBadge,
+    sourceBadge, tag,
     metricCard, intelligenceCard, skeleton, loadingState, emptyState, errorState,
     dataTable, filterBar,
   };

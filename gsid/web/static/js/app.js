@@ -87,6 +87,9 @@
     pill.classList.toggle("is-demo", isDemo);
     document.getElementById("statusText").textContent =
       isDemo ? "DEMO DATA" : "INTELLIGENCE ACTIVE";
+    // Narrow screens show an abbreviation instead: the full label pushed the
+    // pill past the right edge of a 375px viewport.
+    document.getElementById("statusTextShort").textContent = isDemo ? "DEMO" : "LIVE";
     pill.title = isDemo
       ? "Illustrative scenarios — not current news"
       : "Live feeds ingesting · analyzer: " + API.state.meta.ai_provider;
@@ -156,7 +159,17 @@
         const parts = new Intl.DateTimeFormat("en-GB",
           { timeZone: API.state.tz, timeZoneName: "short" }).formatToParts(now);
         const zone = (parts.find((x) => x.type === "timeZoneName") || {}).value || "";
-        el.textContent = t;
+        // Seconds are wrapped so the narrow layout can drop them without
+        // losing the reading; the title always carries the full time and zone.
+        const cut = t.lastIndexOf(":");
+        el.textContent = "";
+        el.appendChild(document.createTextNode(cut > 0 ? t.slice(0, cut) : t));
+        if (cut > 0) {
+          const sec = document.createElement("span");
+          sec.className = "sec";
+          sec.textContent = t.slice(cut);
+          el.appendChild(sec);
+        }
         el.title = t + " " + zone + " (" + API.state.tz + ")";
       } catch { el.textContent = now.toISOString().slice(11, 19); el.title = "UTC"; }
     }
