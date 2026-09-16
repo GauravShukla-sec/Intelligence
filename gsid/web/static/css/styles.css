@@ -1304,3 +1304,54 @@ a.sb-label:hover { color: var(--accent); text-decoration: none; }
 @media (max-width: 620px) {
   .story-list.is-cards { grid-template-columns: 1fr; }
 }
+
+/* =========================================================================
+   CRITICAL ALERTS
+   Alerts must stand out without turning the whole surface red. The signal is
+   a severity edge on the card, not a filled panel.
+   ========================================================================= */
+.alerts-metrics { margin-bottom: .75rem; }
+.alert-cards { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+.alert-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  border-left-width: 3px; padding: .75rem .9rem;
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.alert-card.sev-edge-critical { border-left-color: var(--sev-critical); }
+.alert-card.sev-edge-high     { border-left-color: var(--sev-high); }
+.alert-card.sev-edge-moderate { border-left-color: var(--sev-moderate); }
+.alert-card.sev-edge-low      { border-left-color: var(--sev-low); }
+.ac-top { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
+.ac-detected { font-size: .66rem; color: var(--text-mute); margin-left: auto; white-space: nowrap; }
+.ac-head { font-size: .92rem; font-weight: 550; line-height: 1.35; margin: 0; letter-spacing: -.01em; }
+.ac-head a { color: var(--text); }
+.ac-head a:hover { color: var(--accent); text-decoration: none; }
+.ac-where { font-size: .73rem; color: var(--text-dim); display: flex; gap: .5rem; flex-wrap: wrap; }
+.ac-scope { color: var(--text-mute); }
+.ac-scope::before { content: "\00b7"; margin-right: .5rem; }
+.ac-impacts {
+  margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .15rem .6rem;
+  font-size: .735rem; border-top: 1px solid var(--border); padding-top: .4rem;
+}
+.ac-impacts dt {
+  color: var(--text-mute); font-size: .645rem; text-transform: uppercase;
+  letter-spacing: .08em; padding-top: .12rem;
+}
+.ac-impacts dd { margin: 0; color: var(--text-dim); }
+.ac-action {
+  background: var(--panel-2); border-left: 2px solid var(--accent);
+  padding: .4rem .55rem; border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.ac-action-lab {
+  font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--accent); margin-bottom: .15rem;
+}
+.ac-action p { margin: 0; font-size: .745rem; color: var(--text-dim); line-height: 1.45; }
+.ac-foot { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: auto; padding-top: .1rem; }
+
+/* Category watch pages */
+.cat-split {
+  display: grid; gap: .85rem; margin: .75rem 0;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+@media (max-width: 700px) { .alert-cards { grid-template-columns: 1fr; } }

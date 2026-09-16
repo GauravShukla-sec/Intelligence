@@ -506,14 +506,121 @@
       // Viewing the list marks these alerts seen and clears the nav badge.
       API.alertsSeen.markSeen(data.alerts);
       if (API.refreshAlertBadge) API.refreshAlertBadge();
+
+      const all = data.alerts || [];
       const wrap = h("div");
-      wrap.appendChild(head("Critical Alerts", "Only developments meeting the prompt-action threshold appear here. Newest first."));
-      wrap.appendChild(data.alerts.length ? h("div", { class: "grid" }, data.alerts.map(alertRow))
-        : C.empty("No active critical alerts. This is intentional — the desk avoids alert fatigue."));
+      wrap.appendChild(head("Critical Alerts",
+        "Developments meeting the prompt-action threshold: high or critical impact, near-term urgency, corroborated evidence, and a recent event.",
+        null, "Requires action"));
+
+      if (!all.length) {
+        wrap.appendChild(UI.emptyState(
+          "No developments currently meet the alert threshold. That is a deliberate outcome, not a gap \u2014 the gate is tuned against alert fatigue.",
+          h("a", { class: "btn secondary", href: "#/stories?alerts_only=1" }, "Review recent high-impact stories")));
+        return wrap;
+      }
+
+      // Counts by severity, from the alerts themselves.
+      const bySev = { Critical: 0, High: 0, Moderate: 0, Low: 0 };
+      all.forEach((a) => { if (a.impact in bySev) bySev[a.impact]++; });
+      const immediate = all.filter((a) => a.urgency === "Immediate").length;
+      wrap.appendChild(h("div", { class: "metric-row alerts-metrics" }, [
+        UI.metricCard({ label: "Active alerts", value: all.length, severity: "Critical" }),
+        UI.metricCard({ label: "Immediate urgency", value: immediate,
+          severity: immediate ? "Critical" : null, hint: "act within hours" }),
+        UI.metricCard({ label: "Critical impact", value: bySev.Critical,
+          severity: bySev.Critical ? "Critical" : null }),
+        UI.metricCard({ label: "High impact", value: bySev.High,
+          severity: bySev.High ? "High" : null }),
+      ]));
+
+      // Filters operate on the alert set already in hand — alerting is a small,
+      // bounded list, so there is nothing to gain from a round trip.
+      const listHost = h("div", { class: "alert-cards" });
+      let state = { impact: "", urgency: "", category: "", q: "" };
+
+      function apply() {
+        const rows = all.filter((a) =>
+          (!state.impact || a.impact === state.impact) &&
+          (!state.urgency || a.urgency === state.urgency) &&
+          (!state.category || a.category === state.category) &&
+          (!state.q || (a.headline || "").toLowerCase().indexOf(state.q.toLowerCase()) >= 0));
+        listHost.innerHTML = "";
+        if (!rows.length) {
+          listHost.appendChild(UI.emptyState("No active alerts match these filters."));
+          return;
+        }
+        rows.sort((a, b) => UI.sevMeta(b.impact).rank - UI.sevMeta(a.impact).rank);
+        rows.forEach((a) => listHost.appendChild(alertCard(a)));
+      }
+
+      const cats = Array.from(new Set(all.map((a) => a.category)))
+        .map((c) => ({ value: c, label: (all.find((a) => a.category === c) || {}).category_name || c }));
+      wrap.appendChild(UI.filterBar([
+        { type: "search", key: "q", label: "Filter alerts\u2026" },
+        { type: "select", key: "impact", label: "Impact",
+          options: [{ value: "", label: "Any impact" }, { value: "Critical", label: "Critical" }, { value: "High", label: "High" }] },
+        { type: "select", key: "urgency", label: "Urgency",
+          options: [{ value: "", label: "Any urgency" }, { value: "Immediate", label: "Immediate" }, { value: "24 Hours", label: "24 Hours" }] },
+        { type: "select", key: "category", label: "Category",
+          options: [{ value: "", label: "All categories" }].concat(cats) },
+      ], function (v) { state = v; apply(); }));
+
+      wrap.appendChild(listHost);
+      apply();
       return wrap;
-    });
+    }, "metrics");
     return node;
   };
+
+  /**
+   * Alert card. Carries the operational fields the alert record adds over a
+   * story: who is affected, what to do, and when it was detected. Each block is
+   * omitted when the record does not contain it.
+   */
+  function alertCard(a) {
+    const al = a.alert || {};
+    const impacts = [
+      ["People", al.people_impact],
+      ["Facilities", al.facility_impact],
+      ["Operations", al.operational_impact],
+    ].filter((x) => x[1]);
+
+    return h("article", { class: "alert-card sev-edge-" + slug(a.impact || "") }, [
+      h("div", { class: "ac-top" }, [
+        UI.severityBadge(a.impact),
+        a.urgency ? h("span", { class: "badge " + urgencyCls(a.urgency) }, a.urgency) : null,
+        UI.confidenceBadge(a.confidence),
+        a.category_name ? UI.tag(a.category_name) : null,
+        h("span", { class: "ac-detected mono" },
+          "detected " + API.relTime(al.created_at || a.first_seen)),
+      ].filter(Boolean)),
+      h("h3", { class: "ac-head" },
+        h("a", { href: "#/story/" + a.id }, C.cleanHeadline(a.headline))),
+      h("div", { class: "ac-where" }, [
+        a.location_text || a.region_name || "Location not attributed",
+        a.geo_scope ? h("span", { class: "ac-scope" }, a.geo_scope + " scope") : null,
+      ].filter(Boolean)),
+      impacts.length
+        ? h("dl", { class: "ac-impacts" }, impacts.map(([k, v]) =>
+            [h("dt", null, k), h("dd", null, v)])) : null,
+      al.recommended_action
+        ? h("div", { class: "ac-action" }, [
+            h("div", { class: "ac-action-lab" }, "Recommended action"),
+            h("p", null, al.recommended_action),
+          ]) : null,
+      h("div", { class: "ac-foot" }, [
+        h("a", { class: "btn small", href: "#/story/" + a.id }, "Open intelligence record"),
+        a.primary_country
+          ? h("a", { class: "btn small secondary", href: "#/travel?country=" + a.primary_country }, "Travel risk")
+          : null,
+      ].filter(Boolean)),
+    ].filter(Boolean));
+  }
+  function urgencyCls(v) {
+    return v === "Immediate" ? "sev-critical" : v === "24 Hours" ? "sev-high"
+         : v === "7 Days" ? "sev-moderate" : "sev-low";
+  }
 
   // ============================ STORIES (list + filters) ============================
   Views.stories = function (params) {
@@ -1063,20 +1170,116 @@
   };
 
   // ============================ SUPPLY / CYBER (category views) ============================
-  Views.supply = categoryView("Supply-Chain Security Watch", "supply_chain", "Ports, borders, shipping routes, cargo crime, customs, strikes, CTPAT-relevant developments.");
-  Views.cyber = categoryView("Cyber-Physical Watch", "cyber_physical", "Incidents that could affect factories, buildings, physical-security systems, ICS/OT, and continuity.");
+  Views.supply = categoryView(
+    "Supply-Chain Watch", "supply_chain",
+    "Disruption to ports, shipping lanes, borders, customs, freight and cargo security \u2014 the developments that move delivery dates and route risk.",
+    "Logistics exposure",
+    ["Ports & terminals", "Shipping lanes", "Air freight", "Rail & trucking",
+     "Customs & borders", "Cargo crime", "Manufacturing", "Energy supply"]);
+  Views.cyber = categoryView(
+    "Cyber-Physical Intelligence", "cyber_physical",
+    "Incidents where digital compromise has physical consequence: industrial control systems, utilities, data centres, building systems and connected infrastructure.",
+    "Converged risk",
+    ["Critical infrastructure", "Industrial control / OT", "Data centres",
+     "Utilities & grid", "Transportation systems", "Telecommunications",
+     "Physical security systems"]);
 
-  function categoryView(title, cat, sub) {
+  /**
+   * Shared builder for the single-category watch pages (Supply-Chain,
+   * Cyber-Physical). They ask the same question of the same endpoint, so they
+   * share one implementation: metrics, a location/severity table, a severity
+   * breakdown, and the ranked feed.
+   * `sectors` names the exposure this category maps to, which is the framing
+   * those teams actually work in.
+   */
+  function categoryView(title, cat, sub, eyebrow, sectors) {
     return function () {
       const node = h("div");
       mount(node, async () => {
-        const data = await API.stories("category=" + cat + "&limit=50");
+        const data = await API.stories("category=" + cat + "&limit=100");
+        const rows = data.stories || [];
         const wrap = h("div");
-        wrap.appendChild(head(title, sub));
-        wrap.appendChild(data.stories.length ? h("div", { class: "grid grid-2" }, data.stories.map((s) => C.storyCard(s, openStory)))
-          : C.empty("No qualifying developments."));
+        wrap.appendChild(head(title, sub, [
+          h("a", { class: "btn secondary small", href: "#/stories?category=" + cat }, "Open in Stories"),
+        ], eyebrow));
+
+        if (!rows.length) {
+          wrap.appendChild(UI.emptyState(
+            "No developments have been classified into this category yet."));
+          return wrap;
+        }
+
+        const bySev = { Critical: 0, High: 0, Moderate: 0, Low: 0 };
+        rows.forEach((r) => { if (r.impact in bySev) bySev[r.impact]++; });
+        const located = rows.filter((r) => r.lat != null && r.lon != null).length;
+        const alerts = rows.filter((r) => r.is_alert).length;
+        wrap.appendChild(h("div", { class: "metric-row" }, [
+          UI.metricCard({ label: "Tracked developments", value: rows.length }),
+          UI.metricCard({ label: "Critical impact", value: bySev.Critical,
+            severity: bySev.Critical ? "Critical" : null }),
+          UI.metricCard({ label: "Active alerts", value: alerts,
+            severity: alerts ? "Critical" : null, href: "#/alerts" }),
+          UI.metricCard({ label: "Geolocated", value: located,
+            hint: "plotted on the world view", href: "#/map" }),
+        ]));
+
+        wrap.appendChild(h("div", { class: "cat-split" }, [
+          panel("Severity by region", null, (function () {
+            const by = {};
+            rows.forEach((r) => {
+              const k = r.region_name || "Unattributed";
+              by[k] = by[k] || { label: k, counts: { Critical: 0, High: 0, Moderate: 0, Low: 0 } };
+              if (r.impact in by[k].counts) by[k].counts[r.impact]++;
+            });
+            return CH.severityBars(Object.keys(by).map((k) => by[k]), { label: title + " by region" });
+          })()),
+          panel("Where it is happening", null, (function () {
+            const by = {};
+            rows.forEach((r) => {
+              const k = r.location_text || r.region_name;
+              if (!k) return;
+              by[k] = by[k] || { label: k, value: 0, severity: null };
+              by[k].value++;
+              if (UI.sevMeta(r.impact).rank > UI.sevMeta(by[k].severity || "Informational").rank) {
+                by[k].severity = r.impact;
+              }
+            });
+            const items = Object.keys(by).map((k) => by[k]).sort((a, b) => b.value - a.value);
+            return CH.barChart(items, { label: "Developments by location", limit: 9,
+              empty: "None of these developments carry a location." });
+          })()),
+          sectors ? panel("Exposure this maps to", null,
+            h("div", { class: "em-tags" }, sectors.map((x) => UI.tag(x)))) : null,
+        ].filter(Boolean)));
+
+        wrap.appendChild(panel("Ranked developments", panelLink("All \u2192", "#/stories?category=" + cat),
+          UI.dataTable({
+            dense: true,
+            onRow: function (r) { location.hash = "#/story/" + r.id; },
+            columns: [
+              { key: "impact", label: "Sev", width: "56px",
+                sortValue: (r) => UI.sevMeta(r.impact).rank,
+                render: (r) => UI.severityBadge(r.impact, true) },
+              { key: "headline", label: "Development",
+                render: (r) => h("div", { class: "st-head" }, [
+                  h("span", null, C.cleanHeadline(r.headline)),
+                  r.is_alert ? h("span", { class: "ic-alert-flag" }, "ALERT") : null,
+                ].filter(Boolean)) },
+              { key: "location_text", label: "Location", width: "14%",
+                sortValue: (r) => r.location_text || r.region_name || "",
+                render: (r) => r.location_text || r.region_name || "\u2014" },
+              { key: "urgency", label: "Urgency", width: "10%" },
+              { key: "confidence", label: "Confidence", width: "11%",
+                render: (r) => UI.confidenceBadge(r.confidence) },
+              { key: "relevance_score", label: "Score", width: "60px", align: "right", mono: true },
+              { key: "event_time", label: "Detected", width: "10%", align: "right", mono: true,
+                sortValue: (r) => r.event_time || r.first_seen || "",
+                render: (r) => API.relTime(r.event_time || r.first_seen) },
+            ],
+            rows: rows,
+          }), "flush"));
         return wrap;
-      });
+      }, "metrics");
       return node;
     };
   }
