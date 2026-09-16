@@ -335,3 +335,56 @@ def test_per_day_quota_is_read_from_the_error_message(monkeypatch, sample_input)
     assert state["calls"] == 1        # no pointless retries
     assert sleeps == []               # and no stalling
     assert "quota exhausted" in (res.notes or "").lower()
+
+
+# --------------------------------------------------------------------------
+# Secret resolution: env var, or a file the env var points at.
+# --------------------------------------------------------------------------
+class TestSecretFromFile:
+    """A key must be loadable from a mode-600 file, not only from the env.
+
+    launchd plists live in ~/Library/LaunchAgents as world-readable plaintext,
+    so embedding an API key in one publishes it to every process running as the
+    user. The `*_FILE` form keeps the secret in the file and puts only its path
+    in the plist.
+    """
+
+    def test_direct_env_var_wins(self, monkeypatch, tmp_path):
+        from gsid.config import _secret
+        f = tmp_path / "k"
+        f.write_text("from-file")
+        monkeypatch.setenv("TEST_TOKEN", "from-env")
+        monkeypatch.setenv("TEST_TOKEN_FILE", str(f))
+        assert _secret("TEST_TOKEN") == "from-env"
+
+    def test_reads_the_file_when_env_is_unset(self, monkeypatch, tmp_path):
+        from gsid.config import _secret
+        f = tmp_path / "k"
+        f.write_text("sekrit")
+        monkeypatch.delenv("TEST_TOKEN", raising=False)
+        monkeypatch.setenv("TEST_TOKEN_FILE", str(f))
+        assert _secret("TEST_TOKEN") == "sekrit"
+
+    def test_strips_trailing_newline(self, monkeypatch, tmp_path):
+        """`pbpaste > file` appends a newline, which the API rejects as a 401
+        indistinguishable from a revoked key."""
+        from gsid.config import _secret
+        f = tmp_path / "k"
+        f.write_text("sekrit\n")
+        monkeypatch.delenv("TEST_TOKEN", raising=False)
+        monkeypatch.setenv("TEST_TOKEN_FILE", str(f))
+        assert _secret("TEST_TOKEN") == "sekrit"
+
+    def test_missing_file_is_not_configured_rather_than_fatal(self, monkeypatch, tmp_path):
+        """The registry downgrades to the heuristic on an empty key; raising
+        here would take the whole app down over an optional feature."""
+        from gsid.config import _secret
+        monkeypatch.delenv("TEST_TOKEN", raising=False)
+        monkeypatch.setenv("TEST_TOKEN_FILE", str(tmp_path / "absent"))
+        assert _secret("TEST_TOKEN") == ""
+
+    def test_no_env_at_all_yields_empty(self, monkeypatch):
+        from gsid.config import _secret
+        monkeypatch.delenv("TEST_TOKEN", raising=False)
+        monkeypatch.delenv("TEST_TOKEN_FILE", raising=False)
+        assert _secret("TEST_TOKEN") == ""

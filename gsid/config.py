@@ -3,6 +3,10 @@
 Reads configuration from environment variables (optionally seeded from a
 local `.env` file). No secrets are hard-coded. A minimal `.env` parser is
 included so the app runs without python-dotenv installed.
+
+Secrets additionally accept a `*_FILE` form (`OPENAI_API_KEY_FILE`) that names a
+file to read the value from, so a key can stay in a mode-600 file rather than
+being embedded in a launchd plist, which is world-readable plaintext.
 """
 
 from __future__ import annotations
@@ -13,6 +17,34 @@ from pathlib import Path
 
 # Project root is the directory that contains this package's parent.
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _secret(name: str) -> str:
+    """Resolve a secret from the environment, or from a file it points at.
+
+    `NAME` is used directly when set. Otherwise `NAME_FILE` is read, which lets
+    a secret live in a mode-600 file while only its *path* appears in whatever
+    started the process. That matters for launchd: a plist in
+    ~/Library/LaunchAgents is world-readable plaintext, so an API key written
+    into one is effectively published to every process running as the user.
+
+    Whitespace is stripped. A trailing newline — which `pbpaste > file` and most
+    editors add — produces a 401 that looks exactly like a revoked key, and cost
+    real debugging time the first time this was set up by hand.
+    """
+    direct = os.environ.get(name, "").strip()
+    if direct:
+        return direct
+    path = os.environ.get(name + "_FILE", "").strip()
+    if not path:
+        return ""
+    try:
+        return Path(path).expanduser().read_text(encoding="utf-8").strip()
+    except OSError:
+        # A missing or unreadable key file means "not configured", which the
+        # analyzer registry already downgrades to the heuristic with a warning.
+        # Raising here would take the whole app down over an optional feature.
+        return ""
 
 
 def _load_dotenv(path: Path) -> None:
@@ -133,9 +165,9 @@ def load_config(env_file: str | os.PathLike | None = None) -> Config:
         fetch_timeout_seconds=_as_int(os.environ.get("GSID_FETCH_TIMEOUT_SECONDS"), 15),
         ingest_every_hours=_as_int(os.environ.get("GSID_INGEST_EVERY_HOURS"), 0),
         ai_provider=os.environ.get("GSID_AI_PROVIDER", "heuristic").strip().lower(),
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        anthropic_api_key=_secret("ANTHROPIC_API_KEY"),
         anthropic_model=os.environ.get("GSID_ANTHROPIC_MODEL", "claude-sonnet-5"),
-        openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+        openai_api_key=_secret("OPENAI_API_KEY"),
         openai_model=os.environ.get("GSID_OPENAI_MODEL", "gpt-4o-mini"),
         openai_base_url=os.environ.get("GSID_OPENAI_BASE_URL", "").strip(),
         auth_enabled=_as_bool(os.environ.get("GSID_AUTH_ENABLED"), False),

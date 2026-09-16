@@ -1,14 +1,25 @@
 #!/bin/bash
-# Nightly model-backed re-analysis of stored stories.
+# Model-backed re-analysis of stored stories. For MANUAL runs.
 #
-# Run by launchd (com.gsid.reanalyze). Deliberately conservative: it is
-# unattended, so it bounds itself in TIME as well as story count and exits
-# quietly when anything is missing rather than failing loudly every night.
+# launchd no longer uses this script. com.gsid.reanalyze now invokes
+# `python run.py --reanalyze` directly, because TCC grants are per-binary:
+# /opt/anaconda3/bin/python is allowed to read the project, /bin/bash is not, so
+# every scheduled run through this wrapper died with "Operation not permitted"
+# before it could log anything. The plist carries the provider settings and
+# points OPENAI_API_KEY_FILE at the key file below.
 #
-# Disable with:  launchctl unload ~/Library/LaunchAgents/com.gsid.reanalyze.plist
+# Kept because a manual run is still useful, and because it documents the
+# arguments the scheduled job uses.
+#
+#   bash scripts/reanalyze-nightly.sh
+#
+# Disable the scheduled job with:
+#   launchctl unload ~/Library/LaunchAgents/com.gsid.reanalyze.plist
 set -uo pipefail
 
-PROJECT="/Users/gauravshukla/Documents/Global security news"
+# Derived, not hardcoded: the project has moved once already, which broke every
+# absolute path that referred to it.
+PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEY_FILE="$HOME/.groq_key"
 PYTHON="/opt/anaconda3/bin/python"
 LOG="$PROJECT/logs/reanalyze.log"
