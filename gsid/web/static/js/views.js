@@ -373,13 +373,25 @@
   Views.brief = function () {
     const node = h("div");
     mount(node, async () => {
-      const brief = await API.brief();
-      const wrap = h("div");
+      // The advisory feed is a separate endpoint; a brief without the travel
+      // picture is incomplete, but a travel outage must not cost the brief.
+      const [brief, advisory] = await Promise.all([
+        API.brief(),
+        API.advisoryChanges(14).catch(() => null),
+      ]);
+      const wrap = h("div", { class: "brief-page" });
       wrap.appendChild(head("Daily Global Security Brief",
-        "Generated " + API.fmtTime(brief.generated_at) + " (UTC internal, shown in " + API.state.tz + ")"));
+        "Generated " + API.fmtTime(brief.generated_at) + " \u00b7 times shown in " + API.state.tz,
+        [h("button", { class: "btn secondary small",
+            onclick: function () { window.print(); } }, "Print / PDF")],
+        "Executive briefing"));
+
+      // Sections collect into their own node so the index can be built from
+      // them, then the two are laid out side by side at the end.
+      const sections = h("div", { class: "brief-body" });
 
       // 1 snapshot
-      wrap.appendChild(sectionPanel("1 · Executive Snapshot (60-second read)",
+      sections.appendChild(sectionPanel("1 · Executive Snapshot (60-second read)",
         h("ul", { class: "clean" }, brief.executive_snapshot.map((s) =>
           h("li", null, [
             h("a", { href: "#/story/" + s.id }, h("strong", null, C.cleanHeadline(s.headline))),
@@ -388,7 +400,7 @@
 
       // 2 pulse
       const p = brief.global_risk_pulse;
-      wrap.appendChild(sectionPanel("2 · Global Risk Pulse", h("div", null, [
+      sections.appendChild(sectionPanel("2 · Global Risk Pulse", h("div", null, [
         h("div", { class: "posture posture-" + p.posture.level }, [
           C.chip("Posture: " + p.posture.level, p.posture.level === "Elevated" ? "sev-critical" : p.posture.level === "Guarded" ? "sev-high" : "sev-low", "◧"),
           h("div", { class: "meter" }, h("i")),
@@ -402,12 +414,23 @@
       ])));
 
       // 3 alerts
-      wrap.appendChild(sectionPanel("3 · Critical Alerts",
-        brief.critical_alerts.length ? h("div", { class: "grid" }, brief.critical_alerts.map(alertRow))
-          : h("p", { class: "empty" }, "No developments currently meet the critical-alert threshold.")));
+      sections.appendChild(sectionPanel("3 · Critical Alerts",
+        brief.critical_alerts.length
+          ? h("div", null, [
+              h("ul", { class: "bs-list" }, brief.critical_alerts.slice(0, 8).map((a) =>
+                h("li", null, [
+                  UI.severityBadge(a.impact, true),
+                  h("a", { href: "#/story/" + a.id }, C.cleanHeadline(a.headline)),
+                  h("span", { class: "bs-where" },
+                    (a.location_text || a.region_name || "\u2014") + " \u00b7 " + a.urgency),
+                ]))),
+              h("a", { class: "bs-more", href: "#/alerts" },
+                "All " + brief.critical_alerts.length + " alerts with impact and actions \u2192"),
+            ])
+          : h("p", { class: "bs-none" }, "No developments currently meet the critical-alert threshold.")));
 
       // 4 regional
-      wrap.appendChild(sectionPanel("4 · Regional Security Watch",
+      sections.appendChild(sectionPanel("4 · Regional Security Watch",
         h("div", { class: "grid grid-2" }, brief.regional_watch.map((r) =>
           h("div", { class: "panel" }, [
             h("h3", null, r.region_name),
@@ -417,24 +440,50 @@
           ])))));
 
       // 5 regulations
-      wrap.appendChild(sectionPanel("5 · Laws & Regulations Watch",
+      // Travel risk: government advisory movement over the last 14 days. Only
+      // rendered when the feed answered and actually moved.
+      if (advisory && (advisory.changes || []).length) {
+        sections.appendChild(sectionPanel("4b \u00b7 Travel Risk Movement",
+          h("div", null, [
+            h("p", { class: "bs-note" },
+              "Official advisory changes detected in the last " + advisory.days + " days."),
+            h("ul", { class: "bs-list" }, advisory.changes.slice(0, 8).map((ch) =>
+              h("li", null, [
+                h("span", { class: "badge " + (ch.kind === "escalated" ? "sev-high" : ch.kind === "eased" ? "sev-low" : "sev-info") },
+                  ch.kind),
+                h("a", { href: "#/travel?country=" + (ch.country || "") },
+                  ch.country_name || ch.country),
+                h("span", { class: "bs-where" }, ch.label || ("Level " + ch.level)),
+              ]))),
+            h("a", { class: "bs-more", href: "#/travel" }, "Open Travel Risk \u2192"),
+          ])));
+      }
+
+      sections.appendChild(sectionPanel("5 · Laws & Regulations Watch",
         h("div", { class: "grid grid-2" }, brief.regulations.map(regMini))));
 
       // 6 supply
-      wrap.appendChild(sectionPanel("6 · Supply-Chain Security Watch", storyMiniList(brief.supply_chain_watch)));
+      sections.appendChild(sectionPanel("6 · Supply-Chain Security Watch", storyMiniList(brief.supply_chain_watch)));
       // 7 cyber
-      wrap.appendChild(sectionPanel("7 · Cyber-Physical Watch", storyMiniList(brief.cyber_physical_watch)));
+      sections.appendChild(sectionPanel("7 · Cyber-Physical Watch", storyMiniList(brief.cyber_physical_watch)));
 
       // 8 outlook
       const o = brief.outlook;
-      wrap.appendChild(sectionPanel("8 · 30/60/90-Day Outlook", h("div", { class: "grid grid-3" }, [
-        outlookCol("Confirmed", o.confirmed), outlookCol("Reasonably foreseeable", o.foreseeable), outlookCol("Speculative", o.speculative),
-      ])));
-      wrap.querySelector(".grid-3").insertAdjacentElement("afterend", h("p", { class: "sd-reason" }, o.note));
+      // The note belongs inside the section, not inserted after the fact
+      // against the page root — that lookup broke as soon as sections moved
+      // into their own container.
+      sections.appendChild(sectionPanel("8 · 30/60/90-Day Outlook", h("div", null, [
+        h("div", { class: "grid grid-3" }, [
+          outlookCol("Confirmed", o.confirmed),
+          outlookCol("Reasonably foreseeable", o.foreseeable),
+          outlookCol("Speculative", o.speculative),
+        ]),
+        o.note ? h("p", { class: "bs-note" }, o.note) : null,
+      ].filter(Boolean))));
 
       // 9 lesson
       const l = brief.todays_lesson;
-      wrap.appendChild(sectionPanel("9 · Today's Security Lesson", h("div", null, [
+      sections.appendChild(sectionPanel("9 · Today's Security Lesson", h("div", null, [
         h("h3", null, l.concept),
         h("p", null, l.plain_language),
         l.connected_story ? h("p", null, ["Connected development: ", h("a", { href: "#/story/" + l.connected_story.id }, C.cleanHeadline(l.connected_story.headline))]) : null,
@@ -442,52 +491,68 @@
       ])));
 
       // 10 & 11 links
-      wrap.appendChild(sectionPanel("10 & 11 · Scenario & Knowledge Check",
+      sections.appendChild(sectionPanel("10 & 11 · Scenario & Knowledge Check",
         h("div", { class: "btn-row" }, [
           h("a", { class: "btn", href: "#/learn" }, "Open scenario exercise"),
           h("a", { class: "btn secondary", href: "#/learn" }, "Take today's quiz"),
         ])));
 
       // 12 talking points
-      wrap.appendChild(sectionPanel("12 · Executive Talking Points",
-        h("ul", { class: "clean" }, brief.executive_talking_points.map((t) => h("li", null, t)))));
+      sections.appendChild(sectionPanel("12 · Executive Talking Points",
+        h("ul", { class: "bs-points" }, brief.executive_talking_points.map((t) => h("li", null, t)))));
 
+      // Restore the real appendChild and assemble: index rail beside the body.
+      const index = h("nav", { class: "brief-index", "aria-label": "Brief sections" }, [
+        h("div", { class: "bi-lab" }, "Contents"),
+        h("ol", null, Array.from(sections.querySelectorAll(".brief-sec")).map(function (sec) {
+          const t = sec.querySelector(".bs-head");
+          const num = t.querySelector(".bs-num");
+          return h("li", null, h("a", { href: "#" + sec.id, onclick: function (e) {
+            // Plain anchors would rewrite the SPA hash and re-route the view.
+            e.preventDefault();
+            sec.scrollIntoView({ behavior: "smooth", block: "start" });
+          } }, [
+            num ? h("span", { class: "bi-num mono" }, num.textContent) : null,
+            t.lastChild.textContent,
+          ].filter(Boolean)));
+        })),
+      ]);
+      wrap.appendChild(h("div", { class: "brief-layout" }, [sections, index]));
       return wrap;
-    });
+    }, "line");
     return node;
   };
 
+  /** Brief section. `n` is the printed number; `slugId` anchors the index. */
   function sectionPanel(title, body) {
-    return h("section", { class: "panel", style: "margin-bottom:1rem" }, [h("h2", null, title), body]);
+    const id = "brief-" + slug(title).slice(0, 24);
+    const m = /^(\d+(?:\s*&\s*\d+)?)\s*\u00b7\s*(.*)$/.exec(title);
+    return h("section", { class: "brief-sec", id: id }, [
+      h("h2", { class: "bs-head" }, [
+        m ? h("span", { class: "bs-num mono" }, m[1]) : null,
+        h("span", null, m ? m[2] : title),
+      ].filter(Boolean)),
+      h("div", { class: "bs-body" }, body),
+    ]);
   }
+
   function storyMiniList(list) {
-    if (!list || !list.length) return h("p", { class: "empty" }, "No qualifying developments.");
-    return h("ul", { class: "clean" }, list.map((s) =>
-      h("li", null, [h("a", { href: "#/story/" + s.id }, C.cleanHeadline(s.headline)), " ", C.impactChip(s.impact)])));
+    if (!list || !list.length) {
+      return h("p", { class: "bs-none" }, "No qualifying developments.");
+    }
+    return h("ul", { class: "bs-list" }, list.map((st) =>
+      h("li", null, [
+        UI.severityBadge(st.impact, true),
+        h("a", { href: "#/story/" + st.id }, C.cleanHeadline(st.headline)),
+        st.location_text || st.region_name
+          ? h("span", { class: "bs-where" }, st.location_text || st.region_name) : null,
+      ].filter(Boolean))));
   }
   function outlookCol(title, items) {
     return h("div", { class: "panel" }, [
       h("h3", null, title),
       items && items.length ? h("ul", { class: "clean" }, items.map((i) => h("li", null, [i.title.replace("[DEMO] ", ""), h("br"), h("span", { class: "sd-reason" }, (i.framework || "") + " · " + i.when)])))
         : h("p", { class: "sd-reason" }, "None recorded."),
-    ]);
-  }
-  function alertRow(a) {
-    const al = a.alert || {};
-    return h("div", { class: "panel alert-row", style: "border-left:3px solid var(--sev-critical);cursor:pointer",
-                      role: "button", tabindex: "0", "aria-label": C.cleanHeadline(a.headline),
-                      onclick: () => go("#/story/" + a.id),
-                      onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go("#/story/" + a.id); } } }, [
-      h("div", { class: "sc-top" }, [h("h3", null, h("a", { href: "#/story/" + a.id }, C.cleanHeadline(a.headline))), C.confChip(a.confidence)]),
-      h("div", { class: "sc-meta" }, [C.chip(a.location_text || a.region_name, "", "◍"), C.impactChip(a.impact), C.urgencyChip(a.urgency)]),
-      h("div", { class: "kv", style: "margin-top:.5rem" }, [
-        h("dt", null, "People"), h("dd", null, al.people_impact || "—"),
-        h("dt", null, "Facilities"), h("dd", null, al.facility_impact || "—"),
-        h("dt", null, "Operations"), h("dd", null, al.operational_impact || "—"),
-        h("dt", null, "Event time"), h("dd", null, API.fmtTime(a.event_time)),
-        h("dt", null, "Last verified"), h("dd", null, API.fmtTime(a.last_updated)),
-        h("dt", null, "Recommended"), h("dd", null, al.recommended_action || "—"),
-      ]),
     ]);
   }
   function regMini(r) {
@@ -1109,18 +1174,63 @@
     mount(node, async () => {
       const data = await API.mapData();
       const wrap = h("div");
-      wrap.appendChild(head("World / Region View", "Shaded by activity in the last 30 days: colour is the worst impact recorded, depth is how much serious activity there is. Drag to turn the globe; click a country to filter its stories, or a marker to open the development."));
-      wrap.appendChild(window.GSID_MAP.render(data,
-        (id) => go("#/story/" + id),
-        (iso) => go("#/stories?country=" + iso)));
-      // region summary
+      const risk = data.country_risk || {};
+      const codes = Object.keys(risk);
+      const nameOf = {};
+      (API.state.meta.countries || []).forEach((c) => (nameOf[c.code] = c.name));
+
+      wrap.appendChild(head("World / Region View",
+        "Countries shaded by the worst impact recorded in the last 30 days; depth of shade is the volume of serious activity. Drag to turn the globe, click a country to filter its stories, or a marker to open the development.",
+        null, "Geographic intelligence"));
+
+      const bySev = { Critical: 0, High: 0, Moderate: 0, Low: 0 };
+      codes.forEach((c) => { if (risk[c].impact in bySev) bySev[risk[c].impact]++; });
+      wrap.appendChild(h("div", { class: "metric-row" }, [
+        UI.metricCard({ label: "Countries with activity", value: codes.length }),
+        UI.metricCard({ label: "At critical impact", value: bySev.Critical,
+          severity: bySev.Critical ? "Critical" : null }),
+        UI.metricCard({ label: "At high impact", value: bySev.High,
+          severity: bySev.High ? "High" : null }),
+        UI.metricCard({ label: "Plotted events", value: (data.points || []).length,
+          hint: "developments carrying coordinates" }),
+      ]));
+
+      const mapHost = h("div", { class: "world-map-host" });
+      try {
+        mapHost.appendChild(window.GSID_MAP.render(data,
+          (id) => (location.hash = "#/story/" + id),
+          (iso) => (location.hash = "#/stories?country=" + iso)));
+      } catch (e) {
+        mapHost.appendChild(UI.errorState("The globe could not render: " + e.message));
+      }
+
+      // Drill-down rail beside the globe: world -> region -> country -> events.
       const counts = data.region_counts || {};
-      wrap.appendChild(h("div", { class: "grid grid-4", style: "margin-top:1rem" },
-        API.state.meta.regions.filter(r => r.id !== "global").map((r) =>
-          h("a", { class: "stat", href: "#/stories?region=" + r.id, style: "text-decoration:none" }, [
-            h("div", { class: "num" }, String(counts[r.id] || 0)), h("div", { class: "lbl" }, r.name)]))));
+      const regions = API.state.meta.regions.filter((r) => r.id !== "global");
+      const drill = panel("Drill down", null, h("div", { class: "drill" }, [
+        h("div", { class: "drill-lab" }, "By region"),
+        CH.barChart(regions.map((r) => ({
+          label: r.name, value: counts[r.id] || 0, href: "#/stories?region=" + r.id,
+        })).sort((a, b) => b.value - a.value),
+          { label: "Developments by region", limit: 11,
+            empty: "No regional activity recorded." }),
+        h("div", { class: "drill-lab" }, "Most active countries"),
+        CH.barChart(codes.map((c) => ({
+          label: nameOf[c] || c.toUpperCase(),
+          value: risk[c].total || risk[c].count || 0,
+          severity: risk[c].impact,
+          href: "#/stories?country=" + c,
+        })).sort((a, b) => b.value - a.value),
+          { label: "Developments by country", limit: 10,
+            empty: "No country-level activity recorded." }),
+      ]));
+
+      wrap.appendChild(h("div", { class: "world-split" }, [
+        panel("Global threat picture", panelLink("Regional detail \u2192", "#/regional"), mapHost, "flush"),
+        drill,
+      ]));
       return wrap;
-    });
+    }, "metrics");
     return node;
   };
 
@@ -1130,15 +1240,45 @@
     mount(node, async () => {
       const data = await API.regional();
       const wrap = h("div");
-      wrap.appendChild(head("Regional Security Watch", "‘No material change identified’ is shown where appropriate — sections are not padded."));
-      wrap.appendChild(h("div", { class: "grid grid-2" }, data.regions.map((r) =>
-        h("section", { class: "panel" }, [
-          h("div", { class: "sc-top" }, [h("h2", null, r.region_name), C.chip(r.stories.length + " items", "", "▦")]),
-          r.no_material_change ? h("p", { class: "sd-reason" }, "No material change identified.")
-            : h("div", { class: "grid" }, r.stories.map((s) => C.storyCard(s, openStory))),
-        ]))));
+      const regions = data.regions || [];
+      wrap.appendChild(head("Regional Intelligence",
+        "Per-region picture with the developments behind it. Regions with nothing material say so rather than being padded out.",
+        [h("a", { class: "btn secondary small", href: "#/map" }, "World view")],
+        "By region"));
+
+      const active = regions.filter((r) => !r.no_material_change);
+      wrap.appendChild(h("div", { class: "metric-row" }, [
+        UI.metricCard({ label: "Regions covered", value: regions.length }),
+        UI.metricCard({ label: "With material change", value: active.length,
+          hint: (regions.length - active.length) + " quiet" }),
+        UI.metricCard({ label: "Developments listed", value:
+          regions.reduce((n, r) => n + (r.stories || []).length, 0) }),
+      ]));
+
+      wrap.appendChild(h("div", { class: "region-grid" }, regions.map((r) => {
+        const rows = r.stories || [];
+        const worst = rows.reduce((w, st) =>
+          UI.sevMeta(st.impact).rank > UI.sevMeta(w).rank ? st.impact : w, "Informational");
+        return h("section", { class: "panel flush region-card" }, [
+          h("div", { class: "panel-head" }, [
+            h("h2", null, r.region_name),
+            h("div", { class: "rc-right" }, [
+              rows.length ? UI.severityBadge(worst, true) : null,
+              h("a", { class: "panel-act", href: "#/stories?region=" + r.region }, rows.length + " \u2192"),
+            ].filter(Boolean)),
+          ]),
+          r.no_material_change || !rows.length
+            ? h("p", { class: "rc-quiet" }, "No material change identified.")
+            : h("ul", { class: "rc-list" }, rows.map((st) =>
+                h("li", null, h("a", { href: "#/story/" + st.id }, [
+                  UI.severityBadge(st.impact, true),
+                  h("span", { class: "rc-head" }, C.cleanHeadline(st.headline)),
+                  h("span", { class: "rc-when mono" }, API.relTime(st.event_time || st.first_seen)),
+                ])))),
+        ]);
+      })));
       return wrap;
-    });
+    }, "metrics");
     return node;
   };
 
@@ -1147,27 +1287,115 @@
     const node = h("div");
     mount(node, async () => {
       const data = await API.regulations();
+      const all = data.regulations || [];
       const wrap = h("div");
-      wrap.appendChild(head("Regulatory Tracker", "Lifecycle status is explicit — a proposal is never shown as enacted law."));
-      wrap.appendChild(h("div", { class: "grid" }, data.regulations.map((r) =>
-        h("article", { class: "reg-card" }, [
-          h("div", { class: "sc-top" }, [h("h2", null, r.title.replace("[DEMO] ", "")), h("span", { class: "status-pill st-" + r.status }, r.status)]),
-          h("div", { class: "sc-meta" }, [C.chip(r.jurisdiction, "", "§"), r.framework ? C.chip(r.framework, "", "▦") : null,
-            r.effective_date ? C.chip("Effective: " + r.effective_date, "", "◔") : null]),
-          h("dl", { class: "reg-grid" }, [
-            rg("Affected", r.affected), rg("Obligations", r.obligations), rg("Reporting timelines", r.reporting),
-            rg("Penalties / enforcement", r.penalties), rg("Practical implications", r.implications),
-            rg("Recommended preparation", r.prep_steps),
-          ]),
-          h("div", { class: "btn-row" }, [
-            r.source_url ? h("a", { class: "btn small secondary", href: r.source_url, target: "_blank", rel: "noopener noreferrer" }, "Original source") : null,
-            r.story_id ? h("a", { class: "btn small secondary", href: "#/story/" + r.story_id }, "Related story") : null,
-          ]),
-        ]))));
+      wrap.appendChild(head("Regulatory Tracker",
+        "Obligations that touch physical and converged security. Lifecycle status is explicit \u2014 a proposal is never presented as enacted law.",
+        null, "Compliance horizon"));
+
+      if (!all.length) {
+        wrap.appendChild(UI.emptyState("No regulations are being tracked yet."));
+        return wrap;
+      }
+
+      const byStatus = {};
+      all.forEach((r) => (byStatus[r.status] = (byStatus[r.status] || 0) + 1));
+      // Tiles are built from the status values actually present, not from a
+      // guessed vocabulary. Hardcoding enforced/adopted/proposed showed two
+      // zeroes while `enacted` and `effective` went uncounted — a tile reading
+      // 0 for a status that simply is not used is worse than no tile.
+      const statusOrder = Object.keys(byStatus).sort((a, b) => byStatus[b] - byStatus[a]);
+      wrap.appendChild(h("div", { class: "metric-row" }, [
+        UI.metricCard({ label: "Tracked instruments", value: all.length,
+          hint: statusOrder.length + " lifecycle states in use" }),
+      ].concat(statusOrder.slice(0, 4).map((k) => UI.metricCard({
+        label: k, value: byStatus[k],
+        hint: k === "proposed" ? "not law \u2014 monitor only" : null,
+      })))));
+
+      // Detail lives in an expandable row: the table is for scanning the estate,
+      // and eight prose fields per instrument would make it unscannable.
+      const listHost = h("div");
+      let state = { q: "", status: "", jurisdiction: "" };
+      function apply() {
+        const rows = all.filter((r) =>
+          (!state.status || r.status === state.status) &&
+          (!state.jurisdiction || r.jurisdiction === state.jurisdiction) &&
+          (!state.q || (r.title + " " + (r.framework || "")).toLowerCase()
+            .indexOf(state.q.toLowerCase()) >= 0));
+        listHost.innerHTML = "";
+        listHost.appendChild(UI.dataTable({
+          empty: "No tracked regulation matches these filters.",
+          sort: { key: "effective_date", dir: "desc" },
+          columns: [
+            { key: "title", label: "Instrument",
+              render: (r) => h("div", { class: "reg-title" }, [
+                h("span", null, (r.title || "").replace("[DEMO] ", "")),
+                r.framework ? h("span", { class: "reg-fw mono" }, r.framework) : null,
+              ].filter(Boolean)) },
+            { key: "jurisdiction", label: "Jurisdiction", width: "14%" },
+            { key: "status", label: "Status", width: "11%",
+              render: (r) => h("span", { class: "status-pill st-" + r.status }, r.status) },
+            { key: "effective_date", label: "Effective", width: "10%", mono: true,
+              render: (r) => r.effective_date || "\u2014" },
+            { key: "_detail", label: "", width: "84px", align: "right", sort: false,
+              render: (r) => h("button", {
+                class: "btn small secondary",
+                onclick: function (e) {
+                  e.stopPropagation();
+                  openRegulation(r);
+                },
+              }, "Detail") },
+          ],
+          rows: rows,
+        }));
+      }
+
+      const juris = Array.from(new Set(all.map((r) => r.jurisdiction))).filter(Boolean)
+        .map((j) => ({ value: j, label: j }));
+      wrap.appendChild(UI.filterBar([
+        { type: "search", key: "q", label: "Search instruments\u2026" },
+        { type: "select", key: "status", label: "Status",
+          options: [{ value: "", label: "Any status" }].concat(
+            Object.keys(byStatus).map((k) => ({ value: k, label: k }))) },
+        { type: "select", key: "jurisdiction", label: "Jurisdiction",
+          options: [{ value: "", label: "All jurisdictions" }].concat(juris) },
+      ], function (v) { state = v; apply(); }));
+
+      wrap.appendChild(h("section", { class: "panel flush" }, listHost));
+      apply();
       return wrap;
-    });
+    }, "metrics");
     return node;
   };
+
+  /** Full regulation record in the shared modal. */
+  function openRegulation(r) {
+    const body = h("div", null, [
+      h("div", { class: "ic-meta" }, [
+        h("span", { class: "status-pill st-" + r.status }, r.status),
+        UI.tag(r.jurisdiction),
+        r.framework ? UI.tag(r.framework) : null,
+        r.effective_date ? h("span", { class: "ic-when mono" }, "Effective " + r.effective_date) : null,
+      ].filter(Boolean)),
+      h("dl", { class: "reg-grid" }, [
+        rg("Affected", r.affected), rg("Obligations", r.obligations),
+        rg("Reporting timelines", r.reporting), rg("Penalties / enforcement", r.penalties),
+        rg("Practical implications", r.implications),
+        rg("Recommended preparation", r.prep_steps),
+      ]),
+      h("div", { class: "btn-row" }, [
+        r.source_url ? h("a", { class: "btn small secondary", href: r.source_url,
+          target: "_blank", rel: "noopener noreferrer" }, "Original source") : null,
+        r.story_id ? h("a", { class: "btn small secondary", href: "#/story/" + r.story_id }, "Related story") : null,
+      ].filter(Boolean)),
+    ]);
+    const host = document.getElementById("modalHost");
+    document.getElementById("modalTitle").textContent = (r.title || "").replace("[DEMO] ", "");
+    const mb = document.getElementById("modalBody");
+    mb.innerHTML = ""; mb.appendChild(body);
+    host.hidden = false;
+  }
 
   // ============================ SUPPLY / CYBER (category views) ============================
   Views.supply = categoryView(

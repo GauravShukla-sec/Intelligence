@@ -302,8 +302,10 @@ body.nav-collapsed .brand { justify-content: center; padding: 0; }
 .search .icon-btn { display: none; }
 .topbar-right { display: flex; align-items: center; gap: .5rem; margin-left: auto; }
 
-/* Status pill: the one place the interface asserts its own state. */
-.status-pill {
+/* System-state pill. Named distinctly because `.status-pill` was already
+   taken by the regulatory lifecycle badges, whose colours this would have
+   overridden with a flat green. */
+.sys-pill {
   display: inline-flex; align-items: center; gap: .4rem;
   font-size: .67rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
   font-family: var(--mono); color: var(--sev-low);
@@ -311,11 +313,11 @@ body.nav-collapsed .brand { justify-content: center; padding: 0; }
   background: color-mix(in srgb, var(--sev-low) 10%, transparent);
   padding: .25rem .5rem; border-radius: var(--radius-sm); white-space: nowrap;
 }
-.status-pill .sf-dot { background: var(--sev-low); animation: pulse-dot 2.4s ease-in-out infinite; }
-.status-pill.is-demo { color: var(--conf-unverified); border-color: color-mix(in srgb, var(--conf-unverified) 32%, transparent); background: color-mix(in srgb, var(--conf-unverified) 10%, transparent); }
-.status-pill.is-demo .sf-dot { background: var(--conf-unverified); }
+.sys-pill .sf-dot { background: var(--sev-low); animation: pulse-dot 2.4s ease-in-out infinite; }
+.sys-pill.is-demo { color: var(--conf-unverified); border-color: color-mix(in srgb, var(--conf-unverified) 32%, transparent); background: color-mix(in srgb, var(--conf-unverified) 10%, transparent); }
+.sys-pill.is-demo .sf-dot { background: var(--conf-unverified); }
 @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .status-pill .sf-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .sys-pill .sf-dot { animation: none; } }
 
 .tz-select {
   background: var(--panel); border: 1px solid var(--border); color: var(--text-dim);
@@ -751,7 +753,7 @@ ul.clean li::before { content: "▸"; position: absolute; left: 0; color: var(--
   .main { padding-left: .9rem; padding-right: .9rem; }
   .search { max-width: none; }
   .tz-select, .clock-zone { display: none; }
-  .status-pill { padding: .25rem .4rem; }
+  .sys-pill { padding: .25rem .4rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1355,3 +1357,120 @@ a.sb-label:hover { color: var(--accent); text-decoration: none; }
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 }
 @media (max-width: 700px) { .alert-cards { grid-template-columns: 1fr; } }
+
+/* =========================================================================
+   WORLD / REGION, REGIONAL, REGULATORY
+   ========================================================================= */
+.world-split { display: grid; grid-template-columns: 2.2fr 1fr; gap: .85rem; margin-top: .75rem; align-items: start; }
+.world-map-host { padding: .6rem; }
+.drill { display: flex; flex-direction: column; gap: .5rem; }
+.drill-lab {
+  font-size: .63rem; font-weight: 600; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--text-mute);
+}
+.drill-lab:not(:first-child) { margin-top: .5rem; padding-top: .55rem; border-top: 1px solid var(--border); }
+
+.region-grid {
+  display: grid; gap: .6rem; margin-top: .75rem;
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+}
+.rc-right { display: flex; align-items: center; gap: .45rem; }
+.rc-quiet { font-size: .76rem; color: var(--text-mute); margin: 0; padding: .7rem .9rem; font-style: italic; }
+.rc-list { list-style: none; margin: 0; padding: 0; }
+.rc-list li + li { border-top: 1px solid var(--border); }
+.rc-list a {
+  display: flex; align-items: center; gap: .45rem; padding: .42rem .9rem; color: var(--text-dim);
+}
+.rc-list a:hover { background: var(--panel-hover); color: var(--text); text-decoration: none; }
+.rc-head {
+  flex: 1; font-size: .765rem; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+.rc-when { font-size: .655rem; color: var(--text-mute); white-space: nowrap; }
+
+.reg-title { display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap; }
+.reg-fw { font-size: .655rem; color: var(--text-mute); }
+.reg-grid {
+  display: grid; grid-template-columns: minmax(140px, auto) 1fr; gap: .35rem .9rem;
+  margin: .8rem 0; font-size: .8rem;
+}
+.reg-grid dt {
+  color: var(--text-mute); font-size: .655rem; text-transform: uppercase;
+  letter-spacing: .08em; padding-top: .16rem;
+}
+.reg-grid dd { margin: 0; color: var(--text-dim); line-height: 1.5; }
+
+@media (max-width: 1180px) {
+  .world-split { grid-template-columns: 1fr; }
+}
+@media (max-width: 620px) {
+  .region-grid { grid-template-columns: 1fr; }
+  .reg-grid { grid-template-columns: 1fr; gap: .1rem; }
+  .reg-grid dd { margin-bottom: .5rem; }
+}
+
+/* =========================================================================
+   DAILY BRIEF
+   The one reading surface in the product, so it gets the serif and a narrower
+   measure. Everything else here is a grid of panels; this is a document.
+   ========================================================================= */
+.brief-layout { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 1.6rem; align-items: start; }
+.brief-body { max-width: 78ch; }
+.brief-sec { border-bottom: 1px solid var(--border); padding: 1.1rem 0; }
+.brief-sec:first-child { padding-top: .4rem; }
+.brief-sec:last-child { border-bottom: 0; }
+.bs-head {
+  display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .6rem;
+  font-family: var(--serif); font-size: 1.22rem; font-weight: 500;
+  letter-spacing: -.012em; text-transform: none; color: var(--text);
+}
+.bs-num {
+  font-size: .72rem; color: var(--accent); font-weight: 600;
+  min-width: 1.6em; letter-spacing: .02em;
+}
+.bs-body { font-size: .855rem; line-height: 1.62; color: var(--text-dim); }
+.bs-body p { margin: 0 0 .6rem; }
+.bs-note, .bs-none { font-size: .79rem; color: var(--text-mute); font-style: italic; }
+.bs-list { list-style: none; margin: 0; padding: 0; }
+.bs-list li {
+  display: flex; align-items: baseline; gap: .45rem; padding: .3rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.bs-list li:last-child { border-bottom: 0; }
+.bs-list a { color: var(--text); flex: 1; min-width: 0; }
+.bs-list a:hover { color: var(--accent); }
+.bs-where { font-size: .71rem; color: var(--text-mute); white-space: nowrap; }
+.bs-more { display: inline-block; margin-top: .5rem; font-size: .77rem; }
+.bs-points { padding-left: 1.1rem; margin: 0; }
+.bs-points li { margin-bottom: .45rem; }
+
+/* Sticky contents rail. Anchors are intercepted in JS: a real href would
+   rewrite the SPA hash and re-route the whole view. */
+.brief-index { position: sticky; top: calc(var(--topbar-h) + 1rem); font-size: .765rem; }
+.bi-lab {
+  font-size: .62rem; font-weight: 600; text-transform: uppercase; letter-spacing: .11em;
+  color: var(--text-mute); margin-bottom: .45rem; padding-bottom: .35rem;
+  border-bottom: 1px solid var(--border);
+}
+.brief-index ol { list-style: none; margin: 0; padding: 0; }
+.brief-index li { margin-bottom: .1rem; }
+.brief-index a {
+  display: flex; gap: .45rem; padding: .22rem .35rem; border-radius: var(--radius-sm);
+  color: var(--text-mute); line-height: 1.35;
+}
+.brief-index a:hover { background: var(--panel-hover); color: var(--text); text-decoration: none; }
+.bi-num { color: var(--accent); font-size: .68rem; min-width: 1.5em; }
+
+@media (max-width: 1100px) {
+  .brief-layout { grid-template-columns: 1fr; }
+  .brief-index { position: static; order: -1; border: 1px solid var(--border); border-radius: var(--radius); padding: .6rem .7rem; }
+}
+/* Print: the brief is circulated as a PDF, so drop the chrome. */
+@media print {
+  .sidebar, .topbar, .brief-index, .page-head-actions, .demo-banner { display: none !important; }
+  .main { margin: 0; padding: 0; }
+  .brief-layout { grid-template-columns: 1fr; }
+  .brief-body { max-width: none; }
+  body { background: #fff; color: #000; }
+  .bs-body, .bs-head { color: #000; }
+}
