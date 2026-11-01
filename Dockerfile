@@ -11,6 +11,28 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Refresh the system trust store on every build.
+#
+# The desk makes outbound HTTPS to ~25 external feeds through urllib, which on
+# Debian validates against /etc/ssl/certs rather than a bundled certifi. The
+# base image pins whatever ca-certificates shipped when that tag was built, so
+# a distrust decision made afterwards is not picked up by a plain rebuild.
+#
+# Prompted by the October 2026 eMudhra incident: private keys for eight
+# intermediate CAs were derivable from their public certificates (insufficient
+# randomness at generation), letting anyone mint certificates that clients
+# chaining to the affected roots would accept. Mozilla distrusted them via
+# OneCRL on 2026-10-17 and emergency-distrusted emSign ECC Root CA - G3 on
+# 2026-10-20; eMudhra revoked all eight on 2026-10-18.
+#
+# For an intelligence desk the relevant attack is not credential theft but
+# input poisoning: an attacker positioned on the network could present a forged
+# certificate for a feed host and inject fabricated reporting into the corpus.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first (better layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
